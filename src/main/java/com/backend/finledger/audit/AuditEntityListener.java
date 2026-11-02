@@ -285,6 +285,9 @@ public class AuditEntityListener {
     private Long resolveCurrentUserId() {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof com.backend.finledger.security.UserPrincipal principal) {
+                return principal.getId();
+            }
             if (auth != null && auth.getPrincipal() instanceof Number num) {
                 return num.longValue();
             }
