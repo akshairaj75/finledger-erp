@@ -2,7 +2,7 @@ package com.backend.finledger;
 
 import com.backend.finledger.common.DocType;
 import com.backend.finledger.common.NumberSeriesRepository;
-import com.finledger.backend.common.NumberSeriesService;
+import com.backend.finledger.common.NumberSeriesService;
 import java.time.Year;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

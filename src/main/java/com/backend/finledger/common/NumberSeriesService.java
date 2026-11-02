@@ -1,4 +1,4 @@
-package com.finledger.backend.common;
+package com.backend.finledger.common;
 
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
