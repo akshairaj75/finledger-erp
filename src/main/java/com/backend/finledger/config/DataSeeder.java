@@ -343,6 +343,7 @@ public class DataSeeder implements ApplicationRunner {
 
         Account liabilities = saveAccount(company.getId(), "2000", "Liabilities", AccountType.LIABILITY, null, null, true, NormalBalance.CREDIT, true);
         saveAccount(company.getId(), "2100", "Accounts Payable", AccountType.LIABILITY, "PAYABLE", liabilities.getId(), false, NormalBalance.CREDIT, true);
+        saveAccount(company.getId(), "2150", "Employee Reimbursements Payable", AccountType.LIABILITY, "PAYABLE", liabilities.getId(), false, NormalBalance.CREDIT, true);
         saveAccount(company.getId(), "2200", "VAT Payable (Output)", AccountType.LIABILITY, "TAX", liabilities.getId(), false, NormalBalance.CREDIT, true);
         saveAccount(company.getId(), "2300", "Accrued Expenses", AccountType.LIABILITY, "ACCRUAL", liabilities.getId(), false, NormalBalance.CREDIT, false);
 

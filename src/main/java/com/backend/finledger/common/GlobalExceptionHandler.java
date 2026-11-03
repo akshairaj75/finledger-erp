@@ -123,6 +123,17 @@ public class GlobalExceptionHandler {
     /**
      * HTTP 403 - Forbidden.
      */
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiError> handleForbidden(ForbiddenException ex, HttpServletRequest request) {
+        ApiError apiError = ApiError.of(
+                HttpStatus.FORBIDDEN.value(),
+                ex.getCode() != null ? ex.getCode() : "FORBIDDEN",
+                ex.getMessage(),
+                request.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(apiError);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
         ApiError apiError = ApiError.of(

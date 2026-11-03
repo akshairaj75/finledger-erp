@@ -53,6 +53,20 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("Should handle ForbiddenException with HTTP 403 and specific error code")
+    void testForbiddenException() {
+        com.backend.finledger.common.ForbiddenException ex =
+                new com.backend.finledger.common.ForbiddenException("SELF_APPROVAL_NOT_ALLOWED", "Approver cannot approve their own claim");
+        ResponseEntity<ApiError> response = handler.handleForbidden(ex, request);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(403, response.getBody().status());
+        assertEquals("SELF_APPROVAL_NOT_ALLOWED", response.getBody().code());
+        assertEquals("Approver cannot approve their own claim", response.getBody().message());
+    }
+
+    @Test
     @DisplayName("Should handle AccessDeniedException with HTTP 403")
     void testAccessDeniedException() {
         AccessDeniedException ex = new AccessDeniedException("Forbidden");
