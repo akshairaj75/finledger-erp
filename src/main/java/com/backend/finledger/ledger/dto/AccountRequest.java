@@ -1,7 +1,7 @@
 package com.backend.finledger.ledger.dto;
 
-import com.backend.finledger.ledger.AccountType;
-import com.backend.finledger.ledger.NormalBalance;
+import com.backend.finledger.ledger.entity.AccountType;
+import com.backend.finledger.ledger.entity.NormalBalance;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;

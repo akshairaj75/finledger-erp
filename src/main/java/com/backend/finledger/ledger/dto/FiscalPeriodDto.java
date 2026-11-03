@@ -1,6 +1,6 @@
 package com.backend.finledger.ledger.dto;
 
-import com.backend.finledger.ledger.FiscalPeriodStatus;
+import com.backend.finledger.ledger.entity.FiscalPeriodStatus;
 import java.time.LocalDate;
 
 public record FiscalPeriodDto(

@@ -1,6 +1,6 @@
 package com.backend.finledger.ledger.dto;
 
-import com.backend.finledger.ledger.PartyType;
+import com.backend.finledger.ledger.entity.PartyType;
 import java.math.BigDecimal;
 
 public record JournalLineDto(

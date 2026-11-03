@@ -1,6 +1,6 @@
 package com.backend.finledger.sales.dto;
 
-import com.backend.finledger.sales.InvoiceDocType;
+import com.backend.finledger.sales.entity.InvoiceDocType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

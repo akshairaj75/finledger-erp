@@ -1,9 +1,9 @@
 package com.backend.finledger;
 
-import com.finledger.audit.AuditAction;
-import com.finledger.audit.AuditEntityListener;
-import com.finledger.audit.AuditLog;
-import com.finledger.audit.AuditLogRepository;
+import com.backend.finledger.audit.AuditEntityListener;
+import com.backend.finledger.audit.entity.AuditAction;
+import com.backend.finledger.audit.entity.AuditLog;
+import com.backend.finledger.audit.repository.AuditLogRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +28,8 @@ class AuditLogTest {
 
     @BeforeEach
     void setUp() {
-        jdbcTemplate.update("INSERT IGNORE INTO currencies (code, name, symbol, decimal_places) VALUES ('AED', 'UAE Dirham', 'AED', 2)");
+        jdbcTemplate.update(
+                "INSERT IGNORE INTO currencies (code, name, symbol, decimal_places) VALUES ('AED', 'UAE Dirham', 'AED', 2)");
         jdbcTemplate.update("INSERT IGNORE INTO companies (id, code, legal_name, country_code, base_currency) " +
                 "VALUES (1001, 'TEST_CO', 'Test Company LLC', 'AE', 'AED')");
         testCompanyId = 1001L;
@@ -45,8 +46,7 @@ class AuditLogTest {
                 AuditAction.CREATE,
                 null,
                 "{\"invoiceNo\":\"INV-2026-0414\",\"total\":42525.00}",
-                "127.0.0.1"
-        );
+                "127.0.0.1");
 
         AuditLog saved = auditLogRepository.save(logEntry);
         assertNotNull(saved.getId());
@@ -68,8 +68,7 @@ class AuditLogTest {
                 AuditAction.POST,
                 "{\"status\":\"DRAFT\"}",
                 "{\"status\":\"POSTED\"}",
-                "127.0.0.1"
-        );
+                "127.0.0.1");
 
         List<AuditLog> logs = auditLogRepository.findByEntityNameAndEntityIdOrderByCreatedAtDesc("Invoice", 9414L);
         boolean hasPost = logs.stream().anyMatch(l -> l.getAction() == AuditAction.POST);

@@ -1,6 +1,6 @@
 package com.backend.finledger.ledger.dto;
 
-import com.backend.finledger.ledger.FiscalYearStatus;
+import com.backend.finledger.ledger.entity.FiscalYearStatus;
 import java.time.LocalDate;
 import java.util.List;
 

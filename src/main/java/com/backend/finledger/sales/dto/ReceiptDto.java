@@ -1,7 +1,7 @@
 package com.backend.finledger.sales.dto;
 
-import com.backend.finledger.sales.PaymentMethod;
-import com.backend.finledger.sales.ReceiptStatus;
+import com.backend.finledger.sales.entity.PaymentMethod;
+import com.backend.finledger.sales.entity.ReceiptStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

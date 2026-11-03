@@ -1,6 +1,6 @@
 package com.backend.finledger.ledger.dto;
 
-import com.backend.finledger.ledger.JournalSourceType;
+import com.backend.finledger.ledger.entity.JournalSourceType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;

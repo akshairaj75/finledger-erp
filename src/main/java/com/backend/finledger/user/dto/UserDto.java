@@ -1,6 +1,6 @@
 package com.backend.finledger.user.dto;
 
-import com.backend.finledger.user.UserStatus;
+import com.backend.finledger.user.entity.UserStatus;
 import java.time.Instant;
 import java.util.Set;
 

@@ -1,6 +1,6 @@
 package com.backend.finledger.sales.dto;
 
-import com.backend.finledger.sales.PaymentMethod;
+import com.backend.finledger.sales.entity.PaymentMethod;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;

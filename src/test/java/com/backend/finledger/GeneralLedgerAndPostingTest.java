@@ -1,11 +1,13 @@
 package com.backend.finledger;
 
 import com.backend.finledger.common.BusinessException;
-import com.backend.finledger.company.Company;
-import com.backend.finledger.company.CompanyRepository;
-import com.backend.finledger.ledger.*;
+import com.backend.finledger.company.entity.Company;
+import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.ledger.dto.*;
-import com.backend.finledger.report.ReportService;
+import com.backend.finledger.ledger.entity.*;
+import com.backend.finledger.ledger.repository.*;
+import com.backend.finledger.ledger.service.*;
+import com.backend.finledger.report.service.ReportService;
 import com.backend.finledger.security.CurrentUser;
 import com.backend.finledger.security.UserPrincipal;
 import org.junit.jupiter.api.BeforeEach;

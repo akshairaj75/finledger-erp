@@ -1,15 +1,15 @@
 package com.backend.finledger;
 
 import com.backend.finledger.common.BusinessException;
-import com.backend.finledger.security.AuthService;
 import com.backend.finledger.security.JwtService;
 import com.backend.finledger.security.dto.AuthResponse;
 import com.backend.finledger.security.dto.LoginRequest;
 import com.backend.finledger.security.dto.RefreshRequest;
 import com.backend.finledger.security.dto.TokenResponse;
-import com.backend.finledger.user.User;
-import com.backend.finledger.user.UserRepository;
-import com.backend.finledger.user.UserStatus;
+import com.backend.finledger.security.service.AuthService;
+import com.backend.finledger.user.entity.User;
+import com.backend.finledger.user.entity.UserStatus;
+import com.backend.finledger.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +35,7 @@ class AuthAndRbacTest {
     private JwtService jwtService;
 
     @Autowired
-    private com.backend.finledger.company.CompanyRepository companyRepository;
+    private com.backend.finledger.company.repository.CompanyRepository companyRepository;
 
     @Test
     @Transactional

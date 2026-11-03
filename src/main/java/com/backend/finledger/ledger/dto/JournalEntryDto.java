@@ -1,7 +1,7 @@
 package com.backend.finledger.ledger.dto;
 
-import com.backend.finledger.ledger.JournalSourceType;
-import com.backend.finledger.ledger.JournalStatus;
+import com.backend.finledger.ledger.entity.JournalSourceType;
+import com.backend.finledger.ledger.entity.JournalStatus;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

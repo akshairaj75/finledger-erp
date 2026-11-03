@@ -1,6 +1,6 @@
 package com.backend.finledger.sales.dto;
 
-import com.backend.finledger.sales.InvoiceDocType;
+import com.backend.finledger.sales.entity.InvoiceDocType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;

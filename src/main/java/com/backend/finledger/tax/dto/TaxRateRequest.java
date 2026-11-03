@@ -1,6 +1,6 @@
 package com.backend.finledger.tax.dto;
 
-import com.backend.finledger.tax.TaxType;
+import com.backend.finledger.tax.entity.TaxType;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

@@ -1,21 +1,21 @@
 package com.backend.finledger;
 
 import com.backend.finledger.common.BusinessException;
-import com.backend.finledger.company.CompanyService;
 import com.backend.finledger.company.dto.CompanyDto;
-import com.backend.finledger.currency.CurrencyService;
+import com.backend.finledger.company.service.CompanyService;
 import com.backend.finledger.currency.dto.CurrencyDto;
 import com.backend.finledger.currency.dto.ExchangeRateDto;
 import com.backend.finledger.currency.dto.ExchangeRateRequest;
-import com.backend.finledger.ledger.Account;
-import com.backend.finledger.ledger.AccountRepository;
-import com.backend.finledger.ledger.AccountService;
+import com.backend.finledger.currency.service.CurrencyService;
 import com.backend.finledger.ledger.dto.AccountNodeDto;
+import com.backend.finledger.ledger.entity.Account;
+import com.backend.finledger.ledger.repository.AccountRepository;
+import com.backend.finledger.ledger.service.AccountService;
 import com.backend.finledger.security.UserPrincipal;
-import com.backend.finledger.tax.TaxRateService;
 import com.backend.finledger.tax.dto.TaxRateDto;
-import com.backend.finledger.user.UserService;
+import com.backend.finledger.tax.service.TaxRateService;
 import com.backend.finledger.user.dto.RoleDto;
+import com.backend.finledger.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,7 +39,7 @@ class MasterDataApiTest {
     private CompanyService companyService;
 
     @Autowired
-    private com.backend.finledger.company.CompanyRepository companyRepository;
+    private com.backend.finledger.company.repository.CompanyRepository companyRepository;
 
     @Autowired
     private UserService userService;

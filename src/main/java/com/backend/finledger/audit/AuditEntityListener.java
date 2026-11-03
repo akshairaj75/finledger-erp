@@ -1,5 +1,8 @@
-package com.finledger.audit;
+package com.backend.finledger.audit;
 
+import com.backend.finledger.audit.entity.AuditAction;
+import com.backend.finledger.audit.entity.AuditLog;
+import com.backend.finledger.audit.repository.AuditLogRepository;
 import com.backend.finledger.common.ApplicationContextProvider;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -74,7 +77,8 @@ public class AuditEntityListener {
             AuditAction action = ACTION_OVERRIDE.get() != null ? ACTION_OVERRIDE.get() : AuditAction.CREATE;
             recordAudit(entity, action, null, toJson(entity));
         } catch (Exception e) {
-            log.error("Failed to capture audit log on CREATE for {}: {}", entity.getClass().getSimpleName(), e.getMessage());
+            log.error("Failed to capture audit log on CREATE for {}: {}", entity.getClass().getSimpleName(),
+                    e.getMessage());
         }
     }
 
@@ -95,7 +99,8 @@ public class AuditEntityListener {
 
             recordAudit(entity, action, oldJson, newJson);
         } catch (Exception e) {
-            log.error("Failed to capture audit log on UPDATE for {}: {}", entity.getClass().getSimpleName(), e.getMessage());
+            log.error("Failed to capture audit log on UPDATE for {}: {}", entity.getClass().getSimpleName(),
+                    e.getMessage());
         }
     }
 
@@ -123,7 +128,8 @@ public class AuditEntityListener {
             AuditAction action = ACTION_OVERRIDE.get() != null ? ACTION_OVERRIDE.get() : AuditAction.DELETE;
             recordAudit(entity, action, oldJson, null);
         } catch (Exception e) {
-            log.error("Failed to capture audit log on DELETE for {}: {}", entity.getClass().getSimpleName(), e.getMessage());
+            log.error("Failed to capture audit log on DELETE for {}: {}", entity.getClass().getSimpleName(),
+                    e.getMessage());
         }
     }
 
@@ -161,19 +167,20 @@ public class AuditEntityListener {
     }
 
     public static void logExplicitAction(Long companyId, Long userId, String entityName, Long entityId,
-                                        AuditAction action, Object oldState, Object newState, String ipAddress) {
+            AuditAction action, Object oldState, Object newState, String ipAddress) {
         String oldJson = oldState instanceof String ? (String) oldState : toJson(oldState);
         String newJson = newState instanceof String ? (String) newState : toJson(newState);
         saveAuditLog(companyId, userId, entityName, entityId, action, oldJson, newJson, ipAddress);
     }
 
     private static void saveAuditLog(Long companyId, Long userId, String entityName, Long entityId,
-                                     AuditAction action, String oldJson, String newJson, String ipAddress) {
+            AuditAction action, String oldJson, String newJson, String ipAddress) {
         JdbcTemplate jdbcTemplate = ApplicationContextProvider.getBean(JdbcTemplate.class);
         if (jdbcTemplate != null) {
             try {
-                String sql = "INSERT INTO audit_logs (company_id, user_id, entity_name, entity_id, action, old_values, new_values, ip_address, created_at) " +
-                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                String sql = "INSERT INTO audit_logs (company_id, user_id, entity_name, entity_id, action, old_values, new_values, ip_address, created_at) "
+                        +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 jdbcTemplate.update(sql,
                         companyId,
                         userId,
@@ -183,18 +190,19 @@ public class AuditEntityListener {
                         oldJson,
                         newJson,
                         ipAddress,
-                        new Timestamp(System.currentTimeMillis())
-                );
+                        new Timestamp(System.currentTimeMillis()));
                 return;
             } catch (Exception e) {
-                log.warn("JdbcTemplate insert for audit_log failed, attempting repository fallback: {}", e.getMessage());
+                log.warn("JdbcTemplate insert for audit_log failed, attempting repository fallback: {}",
+                        e.getMessage());
             }
         }
 
         AuditLogRepository repository = ApplicationContextProvider.getBean(AuditLogRepository.class);
         if (repository != null) {
             try {
-                AuditLog logEntry = new AuditLog(companyId, userId, entityName, entityId, action, oldJson, newJson, ipAddress);
+                AuditLog logEntry = new AuditLog(companyId, userId, entityName, entityId, action, oldJson, newJson,
+                        ipAddress);
                 repository.save(logEntry);
             } catch (Exception e) {
                 log.error("Failed to persist audit log: {}", e.getMessage());
@@ -298,7 +306,8 @@ public class AuditEntityListener {
 
     private String resolveClientIp() {
         try {
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder
+                    .getRequestAttributes();
             if (attributes != null) {
                 HttpServletRequest request = attributes.getRequest();
                 String xff = request.getHeader("X-Forwarded-For");
@@ -312,4 +321,3 @@ public class AuditEntityListener {
         return null;
     }
 }
-
