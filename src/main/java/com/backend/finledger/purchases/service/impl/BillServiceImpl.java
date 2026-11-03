@@ -6,6 +6,14 @@ import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
+import com.backend.finledger.inventory.entity.Item;
+import com.backend.finledger.inventory.entity.ItemType;
+import com.backend.finledger.inventory.entity.MovementType;
+import com.backend.finledger.inventory.entity.StockSourceType;
+import com.backend.finledger.inventory.entity.Warehouse;
+import com.backend.finledger.inventory.repository.ItemRepository;
+import com.backend.finledger.inventory.repository.WarehouseRepository;
+import com.backend.finledger.inventory.service.StockService;
 import com.backend.finledger.ledger.dto.JournalEntryDto;
 import com.backend.finledger.ledger.dto.JournalLineRequest;
 import com.backend.finledger.ledger.dto.SourceDocumentPostingRequest;
@@ -55,6 +63,9 @@ public class BillServiceImpl implements BillService {
     private final NumberSeriesService numberSeriesService;
     private final TaxCalculator taxCalculator;
     private final PurchasesMapper purchasesMapper;
+    private final ItemRepository itemRepository;
+    private final WarehouseRepository warehouseRepository;
+    private final StockService stockService;
 
     public BillServiceImpl(BillRepository billRepository,
                            VendorRepository vendorRepository,
@@ -64,7 +75,10 @@ public class BillServiceImpl implements BillService {
                            PostingService postingService,
                            NumberSeriesService numberSeriesService,
                            TaxCalculator taxCalculator,
-                           PurchasesMapper purchasesMapper) {
+                           PurchasesMapper purchasesMapper,
+                           ItemRepository itemRepository,
+                           WarehouseRepository warehouseRepository,
+                           StockService stockService) {
         this.billRepository = billRepository;
         this.vendorRepository = vendorRepository;
         this.taxRateRepository = taxRateRepository;
@@ -74,6 +88,9 @@ public class BillServiceImpl implements BillService {
         this.numberSeriesService = numberSeriesService;
         this.taxCalculator = taxCalculator;
         this.purchasesMapper = purchasesMapper;
+        this.itemRepository = itemRepository;
+        this.warehouseRepository = warehouseRepository;
+        this.stockService = stockService;
     }
 
     @Override
@@ -270,6 +287,33 @@ public class BillServiceImpl implements BillService {
                             null
                     ));
                 }
+
+                // If inventory item, receive stock into warehouse
+                if (line.getItemId() != null) {
+                    itemRepository.findByCompanyIdAndId(companyId, line.getItemId()).ifPresent(item -> {
+                        if (item.getItemType() == ItemType.INVENTORY) {
+                            Long whId = line.getWarehouseId();
+                            if (whId == null) {
+                                whId = warehouseRepository.findFirstByCompanyIdAndIsDefaultTrue(companyId)
+                                        .map(Warehouse::getId)
+                                        .orElse(1L);
+                            }
+
+                            stockService.receiveStock(
+                                    companyId,
+                                    item.getId(),
+                                    whId,
+                                    line.getQuantity(),
+                                    line.getUnitPrice(),
+                                    MovementType.PURCHASE,
+                                    StockSourceType.BILL,
+                                    bill.getId(),
+                                    line.getId(),
+                                    null
+                            );
+                        }
+                    });
+                }
             }
 
             journalLines.add(new JournalLineRequest(
@@ -375,6 +419,35 @@ public class BillServiceImpl implements BillService {
         if (bill.getStatus() == BillStatus.APPROVED || bill.getStatus() == BillStatus.PARTIAL) {
             if (bill.getJournalEntryId() != null) {
                 postingService.reverseJournalEntry(bill.getJournalEntryId(), reason != null ? reason : "Bill voided");
+            }
+
+            // Reverse stock receipt if inventory items were purchased
+            if (bill.getDocType() == BillDocType.BILL) {
+                for (BillLine line : bill.getLines()) {
+                    if (line.getItemId() != null) {
+                        itemRepository.findByCompanyIdAndId(companyId, line.getItemId()).ifPresent(item -> {
+                            if (item.getItemType() == ItemType.INVENTORY) {
+                                Long whId = line.getWarehouseId();
+                                if (whId == null) {
+                                    whId = warehouseRepository.findFirstByCompanyIdAndIsDefaultTrue(companyId)
+                                            .map(Warehouse::getId)
+                                            .orElse(1L);
+                                }
+                                stockService.issueStock(
+                                        companyId,
+                                        item.getId(),
+                                        whId,
+                                        line.getQuantity(),
+                                        MovementType.PURCHASE_RETURN,
+                                        StockSourceType.BILL,
+                                        bill.getId(),
+                                        line.getId(),
+                                        null
+                                );
+                            }
+                        });
+                    }
+                }
             }
         }
 

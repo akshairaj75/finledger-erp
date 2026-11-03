@@ -9,6 +9,15 @@ import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.ledger.entity.*;
 import com.backend.finledger.ledger.repository.*;
 import com.backend.finledger.ledger.service.PostingService;
+import com.backend.finledger.inventory.entity.Item;
+import com.backend.finledger.inventory.entity.ItemType;
+import com.backend.finledger.inventory.entity.MovementType;
+import com.backend.finledger.inventory.entity.StockMovement;
+import com.backend.finledger.inventory.entity.StockSourceType;
+import com.backend.finledger.inventory.entity.Warehouse;
+import com.backend.finledger.inventory.repository.ItemRepository;
+import com.backend.finledger.inventory.repository.WarehouseRepository;
+import com.backend.finledger.inventory.service.StockService;
 import com.backend.finledger.ledger.dto.JournalEntryDto;
 import com.backend.finledger.ledger.dto.JournalLineRequest;
 import com.backend.finledger.ledger.dto.SourceDocumentPostingRequest;
@@ -63,6 +72,9 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final NumberSeriesService numberSeriesService;
     private final TaxCalculator taxCalculator;
     private final SalesMapper salesMapper;
+    private final ItemRepository itemRepository;
+    private final WarehouseRepository warehouseRepository;
+    private final StockService stockService;
 
     public InvoiceServiceImpl(InvoiceRepository invoiceRepository,
                               CustomerRepository customerRepository,
@@ -72,7 +84,10 @@ public class InvoiceServiceImpl implements InvoiceService {
                               PostingService postingService,
                               NumberSeriesService numberSeriesService,
                               TaxCalculator taxCalculator,
-                              SalesMapper salesMapper) {
+                              SalesMapper salesMapper,
+                              ItemRepository itemRepository,
+                              WarehouseRepository warehouseRepository,
+                              StockService stockService) {
         this.invoiceRepository = invoiceRepository;
         this.customerRepository = customerRepository;
         this.taxRateRepository = taxRateRepository;
@@ -82,6 +97,9 @@ public class InvoiceServiceImpl implements InvoiceService {
         this.numberSeriesService = numberSeriesService;
         this.taxCalculator = taxCalculator;
         this.salesMapper = salesMapper;
+        this.itemRepository = itemRepository;
+        this.warehouseRepository = warehouseRepository;
+        this.stockService = stockService;
     }
 
     @Override
@@ -270,6 +288,72 @@ public class InvoiceServiceImpl implements InvoiceService {
                             null
                     ));
                 }
+
+                // Inventory stock issue and COGS posting
+                if (line.getItemId() != null) {
+                    itemRepository.findByCompanyIdAndId(companyId, line.getItemId()).ifPresent(item -> {
+                        if (item.getItemType() == ItemType.INVENTORY) {
+                            Long whId = line.getWarehouseId();
+                            if (whId == null) {
+                                whId = warehouseRepository.findFirstByCompanyIdAndIsDefaultTrue(companyId)
+                                        .map(Warehouse::getId)
+                                        .orElse(1L);
+                            }
+
+                            StockMovement sm = stockService.issueStock(
+                                    companyId,
+                                    item.getId(),
+                                    whId,
+                                    line.getQuantity(),
+                                    MovementType.SALE,
+                                    StockSourceType.INVOICE,
+                                    invoice.getId(),
+                                    line.getId(),
+                                    null
+                            );
+
+                            line.setUnitCost(sm.getUnitCost());
+                            BigDecimal cogsVal = line.getQuantity().multiply(sm.getUnitCost()).setScale(2, RoundingMode.HALF_UP);
+
+                            if (cogsVal.compareTo(BigDecimal.ZERO) > 0) {
+                                Long cogsAcc = item.getCogsAccountId();
+                                if (cogsAcc == null) {
+                                    cogsAcc = accountRepository.findByCompanyIdAndCode(companyId, "5100")
+                                            .or(() -> accountRepository.findByCompanyIdAndCode(companyId, "5000"))
+                                            .map(Account::getId)
+                                            .orElse(line.getAccountId());
+                                }
+
+                                Long invAcc = item.getInventoryAccountId();
+                                if (invAcc == null) {
+                                    invAcc = accountRepository.findByCompanyIdAndCode(companyId, "1300")
+                                            .map(Account::getId)
+                                            .orElse(line.getAccountId());
+                                }
+
+                                journalLines.add(new JournalLineRequest(
+                                        cogsAcc,
+                                        line.getCostCenterId(),
+                                        "COGS (" + item.getSku() + ") - " + invoice.getInvoiceNo(),
+                                        cogsVal,
+                                        BigDecimal.ZERO,
+                                        null,
+                                        null
+                                ));
+
+                                journalLines.add(new JournalLineRequest(
+                                        invAcc,
+                                        line.getCostCenterId(),
+                                        "Inventory Relief (" + item.getSku() + ") - " + invoice.getInvoiceNo(),
+                                        BigDecimal.ZERO,
+                                        cogsVal,
+                                        null,
+                                        null
+                                ));
+                            }
+                        }
+                    });
+                }
             }
         } else {
             // CREDIT NOTE
@@ -367,6 +451,37 @@ public class InvoiceServiceImpl implements InvoiceService {
         if (invoice.getJournalEntryId() != null) {
             postingService.reverseJournalEntry(invoice.getJournalEntryId(),
                     "Voiding " + invoice.getDocType() + " " + invoice.getInvoiceNo() + (reason != null ? ": " + reason : ""));
+        }
+
+        // Reverse stock movements if inventory items were sold
+        if (invoice.getDocType() == InvoiceDocType.INVOICE) {
+            for (InvoiceLine line : invoice.getLines()) {
+                if (line.getItemId() != null) {
+                    itemRepository.findByCompanyIdAndId(companyId, line.getItemId()).ifPresent(item -> {
+                        if (item.getItemType() == ItemType.INVENTORY) {
+                            Long whId = line.getWarehouseId();
+                            if (whId == null) {
+                                whId = warehouseRepository.findFirstByCompanyIdAndIsDefaultTrue(companyId)
+                                        .map(Warehouse::getId)
+                                        .orElse(1L);
+                            }
+                            BigDecimal cost = line.getUnitCost() != null ? line.getUnitCost() : BigDecimal.ZERO;
+                            stockService.receiveStock(
+                                    companyId,
+                                    item.getId(),
+                                    whId,
+                                    line.getQuantity(),
+                                    cost,
+                                    MovementType.SALE_RETURN,
+                                    StockSourceType.INVOICE,
+                                    invoice.getId(),
+                                    line.getId(),
+                                    null
+                            );
+                        }
+                    });
+                }
+            }
         }
 
         invoice.setStatus(InvoiceStatus.VOID);

@@ -184,11 +184,12 @@ class PurchasesAndApTest {
         // 5. Number series
         ensureNumberSeries(bsbCompanyId, DocType.BILL, "BILL-", 1);
         ensureNumberSeries(bsbCompanyId, DocType.PAYMENT, "PAY-", 1);
-        ensureNumberSeries(bsbCompanyId, DocType.JOURNAL, "JRN-", 1);
+        ensureNumberSeries(bsbCompanyId, DocType.JOURNAL, "JV-{YYYY}-", 1);
     }
 
     private void ensureNumberSeries(Long companyId, DocType docType, String prefix, Integer nextVal) {
-        if (numberSeriesRepository.findByCompanyIdAndDocType(companyId, docType).isEmpty()) {
+        var opt = numberSeriesRepository.findByCompanyIdAndDocType(companyId, docType);
+        if (opt.isEmpty()) {
             NumberSeries ns = new NumberSeries();
             ns.setCompanyId(companyId);
             ns.setDocType(docType);
@@ -196,6 +197,12 @@ class PurchasesAndApTest {
             ns.setNextNumber(nextVal);
             ns.setPadding((byte) 4);
             numberSeriesRepository.save(ns);
+        } else {
+            NumberSeries ns = opt.get();
+            if (!prefix.equals(ns.getPrefix())) {
+                ns.setPrefix(prefix);
+                numberSeriesRepository.save(ns);
+            }
         }
     }
 
