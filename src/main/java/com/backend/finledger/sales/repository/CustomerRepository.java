@@ -15,6 +15,10 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     Optional<Customer> findByCompanyIdAndCode(Long companyId, String code);
 
+    Optional<Customer> findFirstByCompanyIdAndTrn(Long companyId, String trn);
+
+    Optional<Customer> findFirstByCompanyIdAndEmailIgnoreCase(Long companyId, String email);
+
     boolean existsByCompanyIdAndCode(Long companyId, String code);
 
     Page<Customer> findByCompanyId(Long companyId, Pageable pageable);
