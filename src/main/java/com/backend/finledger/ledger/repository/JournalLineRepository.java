@@ -68,5 +68,45 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, Long> 
             @Param("companyId") Long companyId,
             @Param("asOfDate") LocalDate asOfDate
     );
-}
 
+    @Query("SELECT jl.accountId AS accountId, " +
+           "COALESCE(SUM(jl.baseDebit), 0) AS totalDebit, " +
+           "COALESCE(SUM(jl.baseCredit), 0) AS totalCredit " +
+           "FROM JournalLine jl JOIN jl.journalEntry je " +
+           "WHERE je.companyId = :companyId " +
+           "AND je.status = 'POSTED' " +
+           "AND je.entryDate BETWEEN :from AND :to " +
+           "AND (:costCenterId IS NULL OR jl.costCenterId = :costCenterId) " +
+           "GROUP BY jl.accountId")
+    List<AccountBalanceSummary> getAccountBalanceSummariesBetween(
+            @Param("companyId") Long companyId,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to,
+            @Param("costCenterId") Long costCenterId
+    );
+
+    @Query("SELECT jl FROM JournalLine jl JOIN jl.journalEntry je " +
+           "WHERE je.companyId = :companyId " +
+           "AND jl.accountId = :accountId " +
+           "AND je.status = 'POSTED' " +
+           "AND je.entryDate <= :asOfDate " +
+           "AND jl.isReconciled = false " +
+           "ORDER BY je.entryDate ASC, jl.id ASC")
+    List<JournalLine> findUnreconciledLinesForAccount(
+            @Param("companyId") Long companyId,
+            @Param("accountId") Long accountId,
+            @Param("asOfDate") LocalDate asOfDate
+    );
+
+    @Query("SELECT jl FROM JournalLine jl JOIN jl.journalEntry je " +
+           "WHERE je.companyId = :companyId " +
+           "AND jl.accountId = :accountId " +
+           "AND je.status = 'POSTED' " +
+           "AND je.entryDate <= :asOfDate " +
+           "ORDER BY je.entryDate ASC, jl.id ASC")
+    List<JournalLine> findAllPostedLinesForAccount(
+            @Param("companyId") Long companyId,
+            @Param("accountId") Long accountId,
+            @Param("asOfDate") LocalDate asOfDate
+    );
+}

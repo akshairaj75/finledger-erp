@@ -5,9 +5,12 @@ import com.backend.finledger.purchases.entity.BillStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -34,5 +37,12 @@ public interface BillRepository extends JpaRepository<Bill, Long> {
 
     List<Bill> findByCompanyIdAndStatusInAndBalanceDueGreaterThan(
             Long companyId, Collection<BillStatus> statuses, BigDecimal minBalance);
+
+    @Query("SELECT b FROM Bill b WHERE b.companyId = :companyId AND b.status <> 'VOID' AND b.status <> 'DRAFT' " +
+           "AND b.billDate BETWEEN :fromDate AND :toDate")
+    List<Bill> findPostedBillsBetween(
+            @Param("companyId") Long companyId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate);
 }
 

@@ -50,5 +50,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
             @Param("companyId") Long companyId,
             @Param("customerId") Long customerId,
             @Param("beforeDate") LocalDate beforeDate);
+
+    @Query("SELECT i FROM Invoice i WHERE i.companyId = :companyId AND i.status <> 'VOID' AND i.status <> 'DRAFT' " +
+           "AND i.invoiceDate BETWEEN :fromDate AND :toDate")
+    List<Invoice> findPostedInvoicesBetween(
+            @Param("companyId") Long companyId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate);
 }
 
