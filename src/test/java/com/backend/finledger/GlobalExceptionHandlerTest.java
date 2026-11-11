@@ -8,11 +8,16 @@ import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -94,6 +99,46 @@ class GlobalExceptionHandlerTest {
 
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
         assertEquals("CONFLICT", response.getBody().code());
+    }
+
+    @Test
+    @DisplayName("Should include field error details in message and fieldErrors for HTTP 400 validation failure")
+    void testMethodArgumentNotValidException() throws NoSuchMethodException {
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "customerRequest");
+        bindingResult.addError(new FieldError("customerRequest", "code", "Code cannot exceed 20 characters"));
+        bindingResult.addError(new FieldError("customerRequest", "arAccountId", "AR account ID is required"));
+
+        MethodParameter param = new MethodParameter(GlobalExceptionHandlerTest.class.getDeclaredMethod("dummyValidationTarget", String.class), 0);
+        MethodArgumentNotValidException ex = new MethodArgumentNotValidException(param, bindingResult);
+
+        ResponseEntity<ApiError> response = handler.handleMethodArgumentNotValid(ex, request);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("VALIDATION_FAILED", response.getBody().code());
+        assertEquals(2, response.getBody().fieldErrors().size());
+        assertTrue(response.getBody().message().contains("code: Code cannot exceed 20 characters"));
+        assertTrue(response.getBody().message().contains("arAccountId: AR account ID is required"));
+    }
+
+    @Test
+    @DisplayName("Should handle MethodArgumentTypeMismatchException with HTTP 400 and fieldErrors")
+    void testMethodArgumentTypeMismatchException() {
+        MethodArgumentTypeMismatchException ex = new MethodArgumentTypeMismatchException(
+                "abc", Long.class, "id", null, new IllegalArgumentException("For input string: \"abc\""));
+
+        ResponseEntity<ApiError> response = handler.handleTypeMismatch(ex, request);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("INVALID_PARAMETER_TYPE", response.getBody().code());
+        assertEquals(1, response.getBody().fieldErrors().size());
+        assertEquals("id", response.getBody().fieldErrors().get(0).field());
+        assertTrue(response.getBody().message().contains("Expected Long"));
+    }
+
+    @SuppressWarnings("unused")
+    private void dummyValidationTarget(String payload) {
     }
 }
 

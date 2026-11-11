@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -39,10 +41,13 @@ public class GlobalExceptionHandler {
                 .map(err -> new FieldError(err.getField(), err.getDefaultMessage()))
                 .toList();
 
+        String message = buildValidationMessage("Request has invalid fields", fieldErrors);
+        log.warn("Validation failed on {}: {}", request.getRequestURI(), message);
+
         ApiError apiError = ApiError.of(
                 HttpStatus.BAD_REQUEST.value(),
                 "VALIDATION_FAILED",
-                "Request has invalid fields",
+                message,
                 request.getRequestURI(),
                 fieldErrors
         );
@@ -58,10 +63,13 @@ public class GlobalExceptionHandler {
                 .map(cv -> new FieldError(cv.getPropertyPath().toString(), cv.getMessage()))
                 .toList();
 
+        String message = buildValidationMessage("Constraint violation on request parameters", fieldErrors);
+        log.warn("Constraint violation on {}: {}", request.getRequestURI(), message);
+
         ApiError apiError = ApiError.of(
                 HttpStatus.BAD_REQUEST.value(),
                 "VALIDATION_FAILED",
-                "Constraint violation on request parameters",
+                message,
                 request.getRequestURI(),
                 fieldErrors
         );
@@ -81,10 +89,34 @@ public class GlobalExceptionHandler {
             });
         });
 
+        String message = buildValidationMessage("Request parameter validation failed", fieldErrors);
+        log.warn("Parameter validation failed on {}: {}", request.getRequestURI(), message);
+
         ApiError apiError = ApiError.of(
                 HttpStatus.BAD_REQUEST.value(),
                 "VALIDATION_FAILED",
-                "Request parameter validation failed",
+                message,
+                request.getRequestURI(),
+                fieldErrors
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
+    }
+
+    /**
+     * HTTP 400 - Path/Query parameter type mismatch.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        String expectedType = ex.getRequiredType() != null ? ex.getRequiredType().getSimpleName() : "valid type";
+        String detail = String.format("Expected %s but received '%s'", expectedType, ex.getValue());
+        List<FieldError> fieldErrors = List.of(new FieldError(ex.getName(), detail));
+        String message = buildValidationMessage("Invalid request parameter", fieldErrors);
+        log.warn("Type mismatch on {}: {}", request.getRequestURI(), message);
+
+        ApiError apiError = ApiError.of(
+                HttpStatus.BAD_REQUEST.value(),
+                "INVALID_PARAMETER_TYPE",
+                message,
                 request.getRequestURI(),
                 fieldErrors
         );
@@ -96,14 +128,27 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler({HttpMessageNotReadableException.class, IllegalArgumentException.class})
     public ResponseEntity<ApiError> handleBadRequest(Exception ex, HttpServletRequest request) {
-        log.warn("Bad request on {}: {}", request.getRequestURI(), ex.getMessage());
+        String detail = ex instanceof HttpMessageNotReadableException readable && readable.getMostSpecificCause() != null
+                ? readable.getMostSpecificCause().getMessage()
+                : ex.getMessage();
+        log.warn("Bad request on {}: {}", request.getRequestURI(), detail);
         ApiError apiError = ApiError.of(
                 HttpStatus.BAD_REQUEST.value(),
                 "BAD_REQUEST",
-                ex.getMessage(),
+                detail != null && !detail.isBlank() ? detail : "Malformed request payload",
                 request.getRequestURI()
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
+    }
+
+    private String buildValidationMessage(String prefix, List<FieldError> fieldErrors) {
+        if (fieldErrors == null || fieldErrors.isEmpty()) {
+            return prefix;
+        }
+        String joined = fieldErrors.stream()
+                .map(err -> err.field() + ": " + err.message())
+                .collect(Collectors.joining(", "));
+        return prefix + ": " + joined;
     }
 
     /**
