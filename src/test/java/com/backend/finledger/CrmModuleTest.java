@@ -119,8 +119,9 @@ class CrmModuleTest {
         authenticateAs(1L, bsbCompanyId, "admin@finledger.com", Set.of(
                 "CUSTOMER_VIEW", "CUSTOMER_CREATE", "CUSTOMER_EDIT",
                 "INVOICE_VIEW", "INVOICE_CREATE", "INVOICE_SEND",
-                "CRM_VIEW", "CRM_EDIT", "LEAD_VIEW", "LEAD_EDIT",
-                "OPPORTUNITY_VIEW", "OPPORTUNITY_EDIT", "QUOTATION_VIEW", "QUOTATION_EDIT",
+                "CRM_VIEW_ALL", "LEAD_VIEW", "LEAD_CREATE", "LEAD_EDIT", "LEAD_CONVERT",
+                "OPPORTUNITY_VIEW", "OPPORTUNITY_CREATE", "OPPORTUNITY_EDIT",
+                "QUOTATION_VIEW", "QUOTATION_CREATE", "QUOTATION_SEND", "QUOTATION_CONVERT",
                 "REPORT_VIEW", "JOURNAL_VIEW", "JOURNAL_CREATE", "JOURNAL_POST",
                 "SETTINGS_EDIT", "ACCOUNT_VIEW", "ACCOUNT_EDIT"
         ));

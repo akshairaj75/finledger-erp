@@ -22,6 +22,7 @@ import com.backend.finledger.ledger.entity.NormalBalance;
 import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.ledger.service.PostingService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +54,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('EXPENSE_REIMBURSE')")
     public BatchReimburseResponse reimburseExpenses(BatchReimburseRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 

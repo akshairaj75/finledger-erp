@@ -2,6 +2,7 @@ package com.backend.finledger.crm.service.impl;
 
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.company.entity.Company;
@@ -21,6 +22,7 @@ import com.backend.finledger.user.entity.User;
 import com.backend.finledger.user.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -68,26 +70,33 @@ public class LeadServiceImpl implements LeadService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('LEAD_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public PageResponse<LeadDto> getLeads(LeadStatus status, LeadSource source, Long ownerUserId, String q, Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
         String search = (q != null && !q.isBlank()) ? q.trim() : null;
+        Long effectiveOwnerId = CurrentUser.hasAuthority("CRM_VIEW_ALL")
+                ? ownerUserId
+                : CurrentUser.getUserId();
 
-        Page<Lead> page = leadRepository.searchLeads(companyId, status, source, ownerUserId, search, pageable);
+        Page<Lead> page = leadRepository.searchLeads(companyId, status, source, effectiveOwnerId, search, pageable);
         List<LeadDto> dtos = page.getContent().stream().map(this::toDto).toList();
         return new PageResponse<>(dtos, page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
     }
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('LEAD_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public LeadDto getLeadById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Lead lead = leadRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("LEAD_NOT_FOUND", "Lead not found with id: " + id));
+        assertLeadAccess(lead);
         return toDto(lead);
     }
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('LEAD_CREATE')")
     public LeadDto createLead(LeadRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -106,10 +115,12 @@ public class LeadServiceImpl implements LeadService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('LEAD_EDIT')")
     public LeadDto updateLead(Long id, LeadRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         Lead lead = leadRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("LEAD_NOT_FOUND", "Lead not found with id: " + id));
+        assertLeadAccess(lead);
 
         populateLeadFields(lead, request);
 
@@ -117,8 +128,17 @@ public class LeadServiceImpl implements LeadService {
         return toDto(saved);
     }
 
+    private void assertLeadAccess(Lead lead) {
+        if (!CurrentUser.hasAuthority("CRM_VIEW_ALL") && lead.getOwnerUserId() != null) {
+            if (!lead.getOwnerUserId().equals(CurrentUser.getUserId())) {
+                throw new ForbiddenException("CRM_ACCESS_DENIED", "You can only access leads assigned to you.");
+            }
+        }
+    }
+
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('LEAD_EDIT')")
     public OpportunityDto qualifyLead(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Lead lead = leadRepository.findByCompanyIdAndId(companyId, id)
@@ -169,6 +189,7 @@ public class LeadServiceImpl implements LeadService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('LEAD_CREATE')")
     public LeadImportResultDto importLeadsFromCsv(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException("EMPTY_FILE", "CSV file is empty or missing.");

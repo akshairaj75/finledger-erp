@@ -1,6 +1,7 @@
 package com.backend.finledger.config;
 
 import com.backend.finledger.security.JwtAuthFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -39,6 +40,11 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint((request, response, authException) ->
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Authentication required or session expired")
+                )
+            )
             .headers(headers -> headers
                 // OWASP Top 10 Security Headers
                 .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
@@ -59,7 +65,9 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
-                    "/api/v1/auth/**",
+                    "/api/v1/auth/login",
+                    "/api/v1/auth/refresh",
+                    "/api/v1/auth/logout",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",
                     "/swagger-ui.html",
@@ -80,7 +88,8 @@ public class SecurityConfig {
             "http://localhost:[*]",
             "https://localhost:[*]",
             "http://127.0.0.1:[*]",
-            "https://127.0.0.1:[*]"
+            "https://127.0.0.1:[*]",
+            "http://192.168.1.201:[*]"
         ));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
         config.setAllowedHeaders(Arrays.asList(

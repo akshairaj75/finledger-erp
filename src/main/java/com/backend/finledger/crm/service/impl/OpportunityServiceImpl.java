@@ -2,6 +2,7 @@ package com.backend.finledger.crm.service.impl;
 
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.company.entity.Company;
@@ -23,6 +24,7 @@ import com.backend.finledger.user.entity.User;
 import com.backend.finledger.user.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,32 +65,43 @@ public class OpportunityServiceImpl implements OpportunityService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('OPPORTUNITY_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public PageResponse<OpportunityDto> getOpportunities(Long stageId, Long customerId, Long ownerUserId, String q, Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
         String search = (q != null && !q.isBlank()) ? q.trim() : null;
+        Long effectiveOwnerId = CurrentUser.hasAuthority("CRM_VIEW_ALL")
+                ? ownerUserId
+                : CurrentUser.getUserId();
 
-        Page<Opportunity> page = opportunityRepository.searchOpportunities(companyId, stageId, customerId, ownerUserId, search, pageable);
+        Page<Opportunity> page = opportunityRepository.searchOpportunities(companyId, stageId, customerId, effectiveOwnerId, search, pageable);
         List<OpportunityDto> dtos = page.getContent().stream().map(this::toDto).toList();
         return new PageResponse<>(dtos, page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
     }
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('OPPORTUNITY_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public OpportunityDto getOpportunityById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Opportunity opp = opportunityRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("OPPORTUNITY_NOT_FOUND", "Opportunity not found with id: " + id));
+        assertOpportunityAccess(opp);
         return toDto(opp);
     }
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('OPPORTUNITY_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public OpportunityBoardDto getOpportunityBoard() {
         Long companyId = CurrentUser.getCompanyId();
         stageService.initDefaultStagesIfEmpty(companyId);
 
         List<CrmPipelineStage> stages = stageRepository.findByCompanyIdOrderBySortOrderAsc(companyId);
         List<Opportunity> allOpps = opportunityRepository.findByCompanyId(companyId);
+        if (!CurrentUser.hasAuthority("CRM_VIEW_ALL")) {
+            Long uid = CurrentUser.getUserId();
+            allOpps = allOpps.stream().filter(o -> uid.equals(o.getOwnerUserId())).toList();
+        }
 
         // Group opportunities by stageId
         Map<Long, List<Opportunity>> oppsByStage = new HashMap<>();
@@ -128,6 +141,7 @@ public class OpportunityServiceImpl implements OpportunityService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('OPPORTUNITY_CREATE')")
     public OpportunityDto createOpportunity(OpportunityRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -167,10 +181,12 @@ public class OpportunityServiceImpl implements OpportunityService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('OPPORTUNITY_EDIT')")
     public OpportunityDto updateOpportunity(Long id, OpportunityRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         Opportunity opp = opportunityRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("OPPORTUNITY_NOT_FOUND", "Opportunity not found with id: " + id));
+        assertOpportunityAccess(opp);
 
         opp.setTitle(request.title().trim());
         opp.setLeadId(request.leadId());
@@ -192,15 +208,25 @@ public class OpportunityServiceImpl implements OpportunityService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('OPPORTUNITY_EDIT')")
     public OpportunityDto updateOpportunityStage(Long id, OpportunityStageRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         Opportunity opp = opportunityRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("OPPORTUNITY_NOT_FOUND", "Opportunity not found with id: " + id));
+        assertOpportunityAccess(opp);
 
         updateStageInternal(opp, request.stageId(), request.lostReason(), companyId);
 
         Opportunity saved = opportunityRepository.save(opp);
         return toDto(saved);
+    }
+
+    private void assertOpportunityAccess(Opportunity opp) {
+        if (!CurrentUser.hasAuthority("CRM_VIEW_ALL") && opp.getOwnerUserId() != null) {
+            if (!opp.getOwnerUserId().equals(CurrentUser.getUserId())) {
+                throw new ForbiddenException("CRM_ACCESS_DENIED", "You can only access opportunities assigned to you.");
+            }
+        }
     }
 
     private void updateStageInternal(Opportunity opp, Long newStageId, String lostReason, Long companyId) {

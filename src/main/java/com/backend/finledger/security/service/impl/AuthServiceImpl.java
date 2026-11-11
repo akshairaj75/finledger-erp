@@ -190,6 +190,21 @@ public class AuthServiceImpl implements AuthService {
         return new MeResponse(userMapper.toDto(user), companyMapper.toDto(company), permissions);
     }
 
+    @Override
+    @Transactional
+    public void changePassword(ChangePasswordRequest request) {
+        Long userId = CurrentUser.getUserId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "Current user not found"));
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new BusinessException("INVALID_PASSWORD", "Current password is incorrect");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+    }
+
     private Set<String> extractPermissions(User user) {
         if (user.getRoles() == null) {
             return Set.of();

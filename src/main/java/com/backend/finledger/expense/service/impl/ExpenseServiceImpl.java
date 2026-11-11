@@ -6,6 +6,7 @@ import com.backend.finledger.banking.entity.BankAccount;
 import com.backend.finledger.banking.repository.BankAccountRepository;
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.company.entity.Company;
@@ -34,6 +35,7 @@ import com.backend.finledger.user.entity.User;
 import com.backend.finledger.user.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -97,6 +99,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('EXPENSE_VIEW')")
     public PageResponse<ExpenseDto> getExpenses(
             String tab,
             ExpenseStatus status,
@@ -122,6 +125,11 @@ public class ExpenseServiceImpl implements ExpenseService {
             }
         }
 
+        // Spec Section 5.5: Employees without approval/reimbursement/report privileges see only their own claims
+        if (!CurrentUser.hasAnyAuthority("EXPENSE_APPROVE", "EXPENSE_REIMBURSE", "REPORT_VIEW")) {
+            filterEmployeeId = currentUserId;
+        }
+
         Page<Expense> page = expenseRepository.searchExpenses(
                 companyId, filterStatus, filterPaidBy, filterEmployeeId, from, to, pageable);
 
@@ -131,15 +139,28 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('EXPENSE_VIEW')")
     public ExpenseDto getExpenseById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Expense expense = expenseRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("EXPENSE_NOT_FOUND", "Expense not found with id: " + id));
+        assertExpenseAccess(expense);
         return toDto(expense);
+    }
+
+    private void assertExpenseAccess(Expense expense) {
+        if (!CurrentUser.hasAnyAuthority("EXPENSE_APPROVE", "EXPENSE_REIMBURSE", "REPORT_VIEW")) {
+            Long uid = CurrentUser.getUserId();
+            boolean isOwner = uid.equals(expense.getEmployeeUserId()) || uid.equals(expense.getCreatedBy());
+            if (!isOwner) {
+                throw new ForbiddenException("EXPENSE_ACCESS_DENIED", "You can only view or modify your own expense claims.");
+            }
+        }
     }
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('EXPENSE_CREATE')")
     public ExpenseDto createExpense(CreateExpenseRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         Long currentUserId = CurrentUser.getUserId();
@@ -195,11 +216,13 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('EXPENSE_CREATE')")
     public ExpenseDto updateExpense(Long id, UpdateExpenseRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
         Expense expense = expenseRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("EXPENSE_NOT_FOUND", "Expense not found with id: " + id));
+        assertExpenseAccess(expense);
 
         if (expense.getStatus() != ExpenseStatus.DRAFT && expense.getStatus() != ExpenseStatus.REJECTED) {
             throw new BusinessException("EXPENSE_LOCKED", "Only DRAFT or REJECTED expenses can be edited. Current status: " + expense.getStatus());
@@ -225,11 +248,13 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('EXPENSE_CREATE')")
     public ExpenseDto submitExpense(Long id) {
         Long companyId = CurrentUser.getCompanyId();
 
         Expense expense = expenseRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("EXPENSE_NOT_FOUND", "Expense not found with id: " + id));
+        assertExpenseAccess(expense);
 
         if (expense.getStatus() != ExpenseStatus.DRAFT && expense.getStatus() != ExpenseStatus.REJECTED) {
             throw new BusinessException("INVALID_STATUS", "Only DRAFT or REJECTED claims can be submitted. Current status: " + expense.getStatus());
@@ -248,6 +273,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('EXPENSE_APPROVE')")
     public ExpenseDto approveExpense(Long id, String comment) {
         Long companyId = CurrentUser.getCompanyId();
         Long currentUserId = CurrentUser.getUserId();
@@ -301,6 +327,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('EXPENSE_APPROVE')")
     public ExpenseDto rejectExpense(Long id, String reason) {
         Long companyId = CurrentUser.getCompanyId();
         Long currentUserId = CurrentUser.getUserId();

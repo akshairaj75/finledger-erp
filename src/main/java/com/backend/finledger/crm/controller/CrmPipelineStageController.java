@@ -6,6 +6,7 @@ import com.backend.finledger.crm.service.CrmPipelineStageService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,11 +32,13 @@ public class CrmPipelineStageController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('OPPORTUNITY_EDIT')")
     public ResponseEntity<CrmPipelineStageDto> createStage(@Valid @RequestBody CrmPipelineStageRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(stageService.createStage(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('OPPORTUNITY_EDIT')")
     public ResponseEntity<CrmPipelineStageDto> updateStage(@PathVariable Long id, @Valid @RequestBody CrmPipelineStageRequest request) {
         return ResponseEntity.ok(stageService.updateStage(id, request));
     }

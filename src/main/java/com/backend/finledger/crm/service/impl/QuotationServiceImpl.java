@@ -52,6 +52,7 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -117,6 +118,7 @@ public class QuotationServiceImpl implements QuotationService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('QUOTATION_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public PageResponse<QuotationDto> getQuotations(Long customerId, Long opportunityId, QuotationStatus status,
                                                     LocalDate fromDate, LocalDate toDate, String search, Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
@@ -126,6 +128,7 @@ public class QuotationServiceImpl implements QuotationService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('QUOTATION_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public QuotationDto getQuotationById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Quotation quotation = quotationRepository.findByCompanyIdAndId(companyId, id)
@@ -134,6 +137,7 @@ public class QuotationServiceImpl implements QuotationService {
     }
 
     @Override
+    @PreAuthorize("hasAuthority('QUOTATION_CREATE')")
     public QuotationDto createQuotation(QuotationRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         Company company = companyRepository.findById(companyId)
@@ -159,6 +163,7 @@ public class QuotationServiceImpl implements QuotationService {
     }
 
     @Override
+    @PreAuthorize("hasAuthority('QUOTATION_CREATE')")
     public QuotationDto updateQuotation(Long id, QuotationRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         Quotation quotation = quotationRepository.findByCompanyIdAndId(companyId, id)
@@ -184,6 +189,7 @@ public class QuotationServiceImpl implements QuotationService {
     }
 
     @Override
+    @PreAuthorize("hasAuthority('QUOTATION_SEND') or hasAuthority('QUOTATION_CREATE')")
     public QuotationDto sendQuotation(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Quotation quotation = quotationRepository.findByCompanyIdAndId(companyId, id)
@@ -197,6 +203,7 @@ public class QuotationServiceImpl implements QuotationService {
     }
 
     @Override
+    @PreAuthorize("hasAuthority('QUOTATION_SEND') or hasAuthority('QUOTATION_CREATE')")
     public QuotationDto acceptQuotation(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Quotation quotation = quotationRepository.findByCompanyIdAndId(companyId, id)
@@ -235,6 +242,7 @@ public class QuotationServiceImpl implements QuotationService {
     }
 
     @Override
+    @PreAuthorize("hasAuthority('QUOTATION_CONVERT')")
     public ConvertToInvoiceResponse convertToInvoice(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Quotation quotation = quotationRepository.findByCompanyIdAndId(companyId, id)

@@ -7,5 +7,6 @@ public interface AuthService {
     TokenResponse refresh(RefreshRequest request);
     void logout(String refreshToken);
     MeResponse getMe();
+    void changePassword(ChangePasswordRequest request);
 }
 

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -24,5 +25,9 @@ public interface NumberSeriesRepository extends JpaRepository<NumberSeries, Long
     );
 
     Optional<NumberSeries> findByCompanyIdAndDocType(Long companyId, DocType docType);
+
+    List<NumberSeries> findByCompanyIdOrderByDocTypeAsc(Long companyId);
+
+    Optional<NumberSeries> findByCompanyIdAndId(Long companyId, Long id);
 }
 

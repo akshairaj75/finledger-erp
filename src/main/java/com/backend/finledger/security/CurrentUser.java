@@ -39,5 +39,25 @@ public final class CurrentUser {
     public static String getEmail() {
         return getRequiredPrincipal().getEmail();
     }
+
+    public static boolean hasAuthority(String authority) {
+        return getPrincipal()
+                .map(p -> p.getPermissions() != null && p.getPermissions().contains(authority))
+                .orElse(false);
+    }
+
+    public static boolean hasAnyAuthority(String... authorities) {
+        Optional<UserPrincipal> principalOpt = getPrincipal();
+        if (principalOpt.isEmpty() || principalOpt.get().getPermissions() == null) {
+            return false;
+        }
+        var granted = principalOpt.get().getPermissions();
+        for (String a : authorities) {
+            if (granted.contains(a)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 

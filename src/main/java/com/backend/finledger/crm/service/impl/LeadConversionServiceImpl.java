@@ -17,6 +17,7 @@ import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.sales.entity.Customer;
 import com.backend.finledger.sales.repository.CustomerRepository;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +48,7 @@ public class LeadConversionServiceImpl implements LeadConversionService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('LEAD_CONVERT')")
     public LeadConvertResponse convertLead(Long leadId, LeadConvertRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
