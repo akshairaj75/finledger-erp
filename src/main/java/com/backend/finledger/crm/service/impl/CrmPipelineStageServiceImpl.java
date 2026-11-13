@@ -8,6 +8,7 @@ import com.backend.finledger.crm.entity.StageType;
 import com.backend.finledger.crm.repository.CrmPipelineStageRepository;
 import com.backend.finledger.crm.service.CrmPipelineStageService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ public class CrmPipelineStageServiceImpl implements CrmPipelineStageService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAnyAuthority('OPPORTUNITY_VIEW','CRM_VIEW_ALL','SETTINGS_VIEW','SETTINGS_EDIT','REPORT_VIEW')")
     public List<CrmPipelineStageDto> getStages() {
         Long companyId = CurrentUser.getCompanyId();
         initDefaultStagesIfEmpty(companyId);
@@ -35,6 +37,7 @@ public class CrmPipelineStageServiceImpl implements CrmPipelineStageService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('OPPORTUNITY_VIEW','CRM_VIEW_ALL','SETTINGS_VIEW','SETTINGS_EDIT','REPORT_VIEW')")
     public CrmPipelineStageDto getStageById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         CrmPipelineStage stage = stageRepository.findByCompanyIdAndId(companyId, id)
@@ -44,6 +47,7 @@ public class CrmPipelineStageServiceImpl implements CrmPipelineStageService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('OPPORTUNITY_EDIT')")
     public CrmPipelineStageDto createStage(CrmPipelineStageRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -64,6 +68,7 @@ public class CrmPipelineStageServiceImpl implements CrmPipelineStageService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('OPPORTUNITY_EDIT')")
     public CrmPipelineStageDto updateStage(Long id, CrmPipelineStageRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         CrmPipelineStage stage = stageRepository.findByCompanyIdAndId(companyId, id)

@@ -28,7 +28,7 @@ public class TaxRateServiceImpl implements TaxRateService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('TAX_RATE_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','TAX_RATE_VIEW','TAX_RATE_EDIT','INVOICE_CREATE','BILL_CREATE','QUOTATION_CREATE','EXPENSE_CREATE','EXPENSE_VIEW')")
     public List<TaxRateDto> getTaxRates() {
         Long companyId = CurrentUser.getCompanyId();
         return taxRateRepository.findByCompanyId(companyId).stream()
@@ -38,7 +38,7 @@ public class TaxRateServiceImpl implements TaxRateService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('TAX_RATE_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','TAX_RATE_VIEW','TAX_RATE_EDIT','INVOICE_CREATE','BILL_CREATE','QUOTATION_CREATE','EXPENSE_CREATE','EXPENSE_VIEW')")
     public TaxRateDto getTaxRateById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         TaxRate taxRate = taxRateRepository.findByCompanyIdAndId(companyId, id)

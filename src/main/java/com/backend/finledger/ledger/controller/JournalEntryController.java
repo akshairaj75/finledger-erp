@@ -13,6 +13,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -29,6 +30,7 @@ public class JournalEntryController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('JOURNAL_VIEW','LEDGER_VIEW','REPORT_VIEW','ACCOUNT_VIEW')")
     public ResponseEntity<PageResponse<JournalEntryDto>> getJournalEntries(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -39,21 +41,25 @@ public class JournalEntryController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('JOURNAL_VIEW','LEDGER_VIEW','REPORT_VIEW','ACCOUNT_VIEW')")
     public ResponseEntity<JournalEntryDto> getJournalEntryById(@PathVariable Long id) {
         return ResponseEntity.ok(postingService.getJournalEntryById(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('JOURNAL_CREATE') or hasAuthority('JOURNAL_POST')")
     public ResponseEntity<JournalEntryDto> createJournalEntry(@Valid @RequestBody CreateJournalEntryRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(postingService.createJournalEntry(request));
     }
 
     @PostMapping("/{id}/post")
+    @PreAuthorize("hasAuthority('JOURNAL_POST')")
     public ResponseEntity<JournalEntryDto> postJournalEntry(@PathVariable Long id) {
         return ResponseEntity.ok(postingService.postJournalEntry(id));
     }
 
     @PostMapping("/{id}/reverse")
+    @PreAuthorize("hasAuthority('JOURNAL_VOID')")
     public ResponseEntity<JournalEntryDto> reverseJournalEntry(
             @PathVariable Long id,
             @RequestBody(required = false) Map<String, String> body) {

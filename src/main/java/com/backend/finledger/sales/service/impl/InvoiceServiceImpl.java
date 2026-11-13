@@ -2,6 +2,7 @@ package com.backend.finledger.sales.service.impl;
 
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.company.entity.Company;
@@ -144,6 +145,12 @@ public class InvoiceServiceImpl implements InvoiceService {
         populateAndCalculateLines(invoice, request.lines(), companyId);
 
         Invoice saved = invoiceRepository.save(invoice);
+        if (Boolean.TRUE.equals(request.send())) {
+            if (!CurrentUser.hasAuthority("INVOICE_SEND")) {
+                throw new ForbiddenException("INVOICE_SEND_FORBIDDEN", "You do not have permission to send invoices.");
+            }
+            return sendInvoice(saved.getId());
+        }
         return mapToDtoWithCustomer(saved, customer);
     }
 
@@ -188,6 +195,12 @@ public class InvoiceServiceImpl implements InvoiceService {
         populateAndCalculateLines(invoice, request.lines(), companyId);
 
         Invoice saved = invoiceRepository.save(invoice);
+        if (Boolean.TRUE.equals(request.send())) {
+            if (!CurrentUser.hasAuthority("INVOICE_SEND")) {
+                throw new ForbiddenException("INVOICE_SEND_FORBIDDEN", "You do not have permission to send invoices.");
+            }
+            return sendInvoice(saved.getId());
+        }
         return mapToDtoWithCustomer(saved, customer);
     }
 
@@ -207,13 +220,24 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('INVOICE_VIEW')")
     public PageResponse<InvoiceDto> getInvoices(Long customerId, Pageable pageable) {
+        return getInvoices(customerId, null, null, null, null, null, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('INVOICE_VIEW')")
+    public PageResponse<InvoiceDto> getInvoices(
+            Long customerId,
+            InvoiceStatus status,
+            InvoiceDocType docType,
+            LocalDate from,
+            LocalDate to,
+            String q,
+            Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
-        Page<Invoice> page;
-        if (customerId != null) {
-            page = invoiceRepository.findByCompanyIdAndCustomerId(companyId, customerId, pageable);
-        } else {
-            page = invoiceRepository.findByCompanyId(companyId, pageable);
-        }
+        String searchTerm = (q != null && !q.isBlank()) ? q.trim() : null;
+        Page<Invoice> page = invoiceRepository.searchInvoices(
+                companyId, customerId, status, docType, from, to, searchTerm, pageable);
 
         return PageResponse.from(page.map(inv -> {
             Customer cust = customerRepository.findByCompanyIdAndId(companyId, inv.getCustomerId()).orElse(null);

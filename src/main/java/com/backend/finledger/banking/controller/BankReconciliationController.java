@@ -21,26 +21,26 @@ public class BankReconciliationController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<BankReconciliationDto> startReconciliation(@Valid @RequestBody BankReconciliationRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(reconciliationService.startReconciliation(request));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<BankReconciliationDto> getReconciliation(@PathVariable Long id) {
         return ResponseEntity.ok(reconciliationService.getReconciliationById(id));
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<List<BankReconciliationDto>> getReconciliationsByBankAccount(
             @RequestParam Long bankAccountId) {
         return ResponseEntity.ok(reconciliationService.getReconciliationsByBankAccountId(bankAccountId));
     }
 
     @PostMapping("/{id}/match")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<BankReconciliationDto> match(
             @PathVariable Long id,
             @Valid @RequestBody ReconciliationMatchRequest request) {
@@ -48,7 +48,7 @@ public class BankReconciliationController {
     }
 
     @PostMapping("/{id}/unmatch/{statementLineId}")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<BankReconciliationDto> unmatch(
             @PathVariable Long id,
             @PathVariable Long statementLineId) {
@@ -56,13 +56,13 @@ public class BankReconciliationController {
     }
 
     @PostMapping("/{id}/auto-match")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<AutoMatchResultDto> autoMatch(@PathVariable Long id) {
         return ResponseEntity.ok(reconciliationService.autoMatch(id));
     }
 
     @PostMapping("/{id}/bank-charge")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<BankReconciliationDto> createBankCharge(
             @PathVariable Long id,
             @Valid @RequestBody BankChargeRequest request) {
@@ -70,7 +70,7 @@ public class BankReconciliationController {
     }
 
     @PostMapping("/{id}/complete")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<BankReconciliationDto> complete(@PathVariable Long id) {
         return ResponseEntity.ok(reconciliationService.completeReconciliation(id));
     }

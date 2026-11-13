@@ -32,7 +32,7 @@ public class ApAgeingServiceImpl implements ApAgeingService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('BILL_VIEW')")
     public ApAgeingReportDto getApAgeingReport(LocalDate asOfDate) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate asOf = asOfDate != null ? asOfDate : LocalDate.now();

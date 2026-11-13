@@ -6,6 +6,7 @@ import com.backend.finledger.currency.dto.ExchangeRateRequest;
 import com.backend.finledger.currency.service.CurrencyService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,16 +22,19 @@ public class CurrencyController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','CURRENCY_VIEW','CURRENCY_EDIT','INVOICE_CREATE','BILL_CREATE','QUOTATION_CREATE','JOURNAL_CREATE','EXPENSE_CREATE')")
     public ResponseEntity<List<CurrencyDto>> getAll() {
         return ResponseEntity.ok(currencyService.getAllCurrencies());
     }
 
     @GetMapping("/exchange-rates")
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','CURRENCY_VIEW','CURRENCY_EDIT','INVOICE_CREATE','BILL_CREATE','QUOTATION_CREATE','JOURNAL_CREATE','EXPENSE_CREATE')")
     public ResponseEntity<List<ExchangeRateDto>> getExchangeRates() {
         return ResponseEntity.ok(currencyService.getExchangeRates());
     }
 
     @PostMapping("/exchange-rates")
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('CURRENCY_EDIT')")
     public ResponseEntity<ExchangeRateDto> setExchangeRate(@Valid @RequestBody ExchangeRateRequest request) {
         return ResponseEntity.ok(currencyService.setExchangeRate(request));
     }

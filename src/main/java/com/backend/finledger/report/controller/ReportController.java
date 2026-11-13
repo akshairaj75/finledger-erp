@@ -33,7 +33,7 @@ public class ReportController {
     }
 
     @GetMapping("/general-ledger")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW')")
     public ResponseEntity<GeneralLedgerReportDto> getGeneralLedgerReport(
             @RequestParam Long accountId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -42,28 +42,28 @@ public class ReportController {
     }
 
     @GetMapping("/trial-balance")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW')")
     public ResponseEntity<TrialBalanceReportDto> getTrialBalanceReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         return ResponseEntity.ok(reportService.getTrialBalanceReport(asOf));
     }
 
     @GetMapping("/ar-ageing")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('SALES_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('INVOICE_VIEW')")
     public ResponseEntity<ArAgeingReportDto> getArAgeingReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         return ResponseEntity.ok(arAgeingService.getArAgeingReport(asOf));
     }
 
     @GetMapping("/ap-ageing")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('PURCHASES_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('BILL_VIEW')")
     public ResponseEntity<ApAgeingReportDto> getApAgeingReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         return ResponseEntity.ok(apAgeingService.getApAgeingReport(asOf));
     }
 
     @GetMapping("/profit-loss")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public ResponseEntity<ProfitLossReportDto> getProfitLossReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -73,7 +73,7 @@ public class ReportController {
     }
 
     @GetMapping("/balance-sheet")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public ResponseEntity<BalanceSheetReportDto> getBalanceSheetReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
             @RequestParam(required = false) String compare) {
@@ -81,7 +81,7 @@ public class ReportController {
     }
 
     @GetMapping("/vat-return")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public ResponseEntity<VatReturnReportDto> getVatReturnReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
@@ -89,7 +89,7 @@ public class ReportController {
     }
 
     @GetMapping("/stock-valuation")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('ITEM_VIEW')")
     public ResponseEntity<StockValuationReportDto> getStockValuationReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
             @RequestParam(required = false) Long warehouseId) {
@@ -97,7 +97,7 @@ public class ReportController {
     }
 
     @GetMapping("/stock-movement")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('ITEM_VIEW')")
     public ResponseEntity<StockMovementReportDto> getStockMovementReport(
             @RequestParam Long itemId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -106,7 +106,7 @@ public class ReportController {
     }
 
     @GetMapping("/pipeline-forecast")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<PipelineForecastReportDto> getPipelineForecastReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -115,7 +115,7 @@ public class ReportController {
     }
 
     @GetMapping("/expense-analysis")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('EXPENSE_APPROVE')")
     public ResponseEntity<ExpenseAnalysisReportDto> getExpenseAnalysisReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -124,7 +124,7 @@ public class ReportController {
     }
 
     @GetMapping("/{type}/export")
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public ResponseEntity<byte[]> exportReport(
             @PathVariable String type,
             @RequestParam(defaultValue = "pdf") String format,

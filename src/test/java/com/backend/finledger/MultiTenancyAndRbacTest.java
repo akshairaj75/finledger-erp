@@ -1,14 +1,22 @@
 package com.backend.finledger;
 
+import com.backend.finledger.banking.dto.BankAccountRequest;
+import com.backend.finledger.banking.dto.BankReconciliationRequest;
+import com.backend.finledger.banking.service.BankAccountService;
+import com.backend.finledger.banking.service.BankReconciliationService;
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.ledger.dto.AccountRequest;
+import com.backend.finledger.ledger.dto.CreateJournalEntryRequest;
 import com.backend.finledger.ledger.entity.Account;
 import com.backend.finledger.ledger.entity.AccountType;
 import com.backend.finledger.ledger.entity.NormalBalance;
 import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.ledger.service.AccountService;
+import com.backend.finledger.ledger.service.FiscalYearPeriodService;
+import com.backend.finledger.ledger.service.PostingService;
+import com.backend.finledger.report.service.ReportService;
 import com.backend.finledger.security.UserPrincipal;
 import com.backend.finledger.tax.dto.TaxRateDto;
 import com.backend.finledger.tax.dto.TaxRateRequest;
@@ -25,12 +33,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
@@ -59,6 +69,21 @@ class MultiTenancyAndRbacTest {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private PostingService postingService;
+
+    @Autowired
+    private FiscalYearPeriodService fiscalYearPeriodService;
+
+    @Autowired
+    private BankAccountService bankAccountService;
+
+    @Autowired
+    private BankReconciliationService bankReconciliationService;
+
+    @Autowired
+    private ReportService reportService;
 
     private Long bsbCompanyId;
     private Long acmeCompanyId;
@@ -167,6 +192,27 @@ class MultiTenancyAndRbacTest {
         // Attempt to create an account should fail with AccessDeniedException
         AccountRequest accReq = new AccountRequest("9999", "Fake Account", AccountType.EXPENSE, null, null, false, NormalBalance.DEBIT, "AED", BigDecimal.ZERO, true);
         assertThrows(AccessDeniedException.class, () -> accountService.createAccount(accReq));
+
+        // Attempt to close a fiscal period or create bank reconciliation should fail
+        assertThrows(AccessDeniedException.class, () -> fiscalYearPeriodService.closePeriod(1L));
+        assertThrows(AccessDeniedException.class, () -> bankAccountService.createBankAccount(
+                new BankAccountRequest("Unauth", "Bank", "000", null, null, "AED", 1L, null, true)));
+        assertThrows(AccessDeniedException.class, () -> bankReconciliationService.startReconciliation(
+                new BankReconciliationRequest(1L, LocalDate.now(), BigDecimal.ZERO)));
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("RBAC: EMPLOYEE role cannot bypass authorization into Reports, Journals, COA or Bank Reconciliation")
+    void testRbacAuthorization_EmployeeDeniedPrivilegedReadsAndWrites() {
+        authenticateAs(11L, bsbCompanyId, "emp@finledger.com", Set.of("EXPENSE_VIEW", "EXPENSE_CREATE"));
+
+        assertThrows(AccessDeniedException.class, () -> reportService.getProfitLossReport(null, null, null, null));
+        assertThrows(AccessDeniedException.class, () -> postingService.getJournalEntries(null, null, null, null, PageRequest.of(0, 10)));
+        assertThrows(AccessDeniedException.class, () -> accountService.getAccounts(null, null, null, PageRequest.of(0, 10)));
+        assertThrows(AccessDeniedException.class, () -> bankReconciliationService.autoMatch(1L));
+        assertThrows(AccessDeniedException.class, () -> postingService.createJournalEntry(
+                new CreateJournalEntryRequest(LocalDate.now(), "REF", "Unauth", null, null, "AED", BigDecimal.ONE, List.of(), false)));
     }
 
     @Test

@@ -25,7 +25,7 @@ public class BankStatementController {
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<BankStatementDto> importStatement(
             @RequestParam("file") MultipartFile file,
             @RequestParam("bankAccountId") Long bankAccountId,
@@ -38,7 +38,7 @@ public class BankStatementController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE')")
     public ResponseEntity<List<BankStatementDto>> getStatements(@RequestParam Long bankAccountId) {
         return ResponseEntity.ok(bankStatementService.getStatementsByBankAccountId(bankAccountId));
     }

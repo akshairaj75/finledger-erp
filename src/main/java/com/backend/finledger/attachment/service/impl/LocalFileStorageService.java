@@ -37,7 +37,8 @@ public class LocalFileStorageService implements FileStorageService {
 
     private final Path rootLocation;
 
-    public LocalFileStorageService(@Value("${finledger.storage.local-dir:./uploads}") String uploadDir) {
+    public LocalFileStorageService(
+            @Value("${finledger.attachments.base-path:${finledger.storage.local-dir:./uploads}}") String uploadDir) {
         this.rootLocation = Paths.get(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.rootLocation);

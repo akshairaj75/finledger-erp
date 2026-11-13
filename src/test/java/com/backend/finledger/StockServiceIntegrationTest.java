@@ -217,4 +217,41 @@ class StockServiceIntegrationTest extends BaseIntegrationTest {
         assertEquals(0, new BigDecimal("35").compareTo(finalBalance.getQtyOnHand()),
                 "Pessimistic locking must guarantee exact total without lost updates");
     }
+
+    @Test
+    @DisplayName("Should allow or block negative stock according to Company allowNegativeStock flag")
+    void testAllowNegativeStockPolicy() {
+        ItemDto item = createInventoryItem("NEG", new BigDecimal("100.00"), new BigDecimal("40.00"));
+        stockService.receiveStock(
+                companyId, item.id(), testWarehouse.id(),
+                new BigDecimal("2"), new BigDecimal("40.00"),
+                MovementType.PURCHASE, StockSourceType.BILL, 701L, 1L, null
+        );
+
+        Company company = companyRepository.findById(companyId).orElseThrow();
+        boolean originalFlag = Boolean.TRUE.equals(company.getAllowNegativeStock());
+        try {
+            company.setAllowNegativeStock(false);
+            companyRepository.saveAndFlush(company);
+
+            assertThrows(IllegalStateException.class, () -> stockService.issueStock(
+                    companyId, item.id(), testWarehouse.id(),
+                    new BigDecimal("5"), MovementType.SALE, StockSourceType.INVOICE, 702L, 1L, null
+            ));
+
+            company.setAllowNegativeStock(true);
+            companyRepository.saveAndFlush(company);
+
+            stockService.issueStock(
+                    companyId, item.id(), testWarehouse.id(),
+                    new BigDecimal("5"), MovementType.SALE, StockSourceType.INVOICE, 703L, 1L, null
+            );
+
+            StockBalance balance = stockBalanceRepository.findByItemIdAndWarehouseId(item.id(), testWarehouse.id()).orElseThrow();
+            assertEquals(0, new BigDecimal("-3").compareTo(balance.getQtyOnHand()));
+        } finally {
+            company.setAllowNegativeStock(originalFlag);
+            companyRepository.saveAndFlush(company);
+        }
+    }
 }

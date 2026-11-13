@@ -27,7 +27,7 @@ public class CostCenterServiceImpl implements CostCenterService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('SETTINGS_VIEW') or hasAuthority('SETTINGS_EDIT') or hasAuthority('ACCOUNT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','REPORT_VIEW')")
     public List<CostCenterDto> getCostCenters(Boolean activeOnly) {
         Long companyId = CurrentUser.getCompanyId();
         List<CostCenter> list = Boolean.TRUE.equals(activeOnly)
@@ -38,7 +38,7 @@ public class CostCenterServiceImpl implements CostCenterService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('SETTINGS_VIEW') or hasAuthority('SETTINGS_EDIT') or hasAuthority('ACCOUNT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','REPORT_VIEW')")
     public CostCenterDto getCostCenterById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         CostCenter cc = costCenterRepository.findByCompanyIdAndId(companyId, id)

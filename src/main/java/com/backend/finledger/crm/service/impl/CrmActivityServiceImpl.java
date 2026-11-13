@@ -10,6 +10,7 @@ import com.backend.finledger.crm.service.CrmActivityService;
 import com.backend.finledger.security.CurrentUser;
 import com.backend.finledger.user.entity.User;
 import com.backend.finledger.user.repository.UserRepository;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ public class CrmActivityServiceImpl implements CrmActivityService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('LEAD_VIEW','OPPORTUNITY_VIEW','CUSTOMER_VIEW','CRM_VIEW_ALL')")
     public List<CrmActivityDto> getActivities(ActivityRelatedType relatedType, Long relatedId, Long assignedUserId, Boolean openOnly) {
         Long companyId = CurrentUser.getCompanyId();
         List<CrmActivity> activities = activityRepository.searchActivities(companyId, relatedType, relatedId, assignedUserId, openOnly);
@@ -39,6 +41,7 @@ public class CrmActivityServiceImpl implements CrmActivityService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('LEAD_VIEW','OPPORTUNITY_VIEW','CUSTOMER_VIEW','CRM_VIEW_ALL')")
     public CrmActivityDto getActivityById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         CrmActivity activity = activityRepository.findByCompanyIdAndId(companyId, id)
@@ -47,6 +50,7 @@ public class CrmActivityServiceImpl implements CrmActivityService {
     }
 
     @Override
+    @PreAuthorize("hasAnyAuthority('LEAD_CREATE','LEAD_EDIT','OPPORTUNITY_CREATE','OPPORTUNITY_EDIT','CRM_VIEW_ALL')")
     public CrmActivityDto createActivity(CrmActivityRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -65,6 +69,7 @@ public class CrmActivityServiceImpl implements CrmActivityService {
     }
 
     @Override
+    @PreAuthorize("hasAnyAuthority('LEAD_EDIT','OPPORTUNITY_EDIT','CRM_VIEW_ALL')")
     public CrmActivityDto completeActivity(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         CrmActivity activity = activityRepository.findByCompanyIdAndId(companyId, id)
@@ -79,6 +84,7 @@ public class CrmActivityServiceImpl implements CrmActivityService {
     }
 
     @Override
+    @PreAuthorize("hasAnyAuthority('LEAD_EDIT','OPPORTUNITY_EDIT','CRM_VIEW_ALL')")
     public void deleteActivity(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         CrmActivity activity = activityRepository.findByCompanyIdAndId(companyId, id)

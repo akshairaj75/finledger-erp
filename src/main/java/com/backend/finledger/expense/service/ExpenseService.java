@@ -3,11 +3,13 @@ package com.backend.finledger.expense.service;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.expense.dto.CreateExpenseRequest;
 import com.backend.finledger.expense.dto.ExpenseDto;
+import com.backend.finledger.expense.dto.ExpenseLineDto;
 import com.backend.finledger.expense.dto.UpdateExpenseRequest;
 import com.backend.finledger.expense.entity.ExpenseStatus;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
+import java.util.List;
 
 public interface ExpenseService {
 
@@ -30,5 +32,7 @@ public interface ExpenseService {
     ExpenseDto approveExpense(Long id, String comment);
 
     ExpenseDto rejectExpense(Long id, String reason);
+
+    List<ExpenseLineDto> getBillableExpenseLines(Long customerId);
 }
 

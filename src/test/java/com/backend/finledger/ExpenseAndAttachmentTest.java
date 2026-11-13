@@ -222,7 +222,7 @@ class ExpenseAndAttachmentTest {
 
         // Default login as admin
         authenticateAs(1L, companyId, "admin@finledger.com", "Admin User", Set.of(
-                "EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE", "EXPENSE_REIMBURSE", "JOURNAL_VIEW", "JOURNAL_POST"
+                "SETTINGS_EDIT", "EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE", "EXPENSE_REIMBURSE", "JOURNAL_VIEW", "JOURNAL_POST"
         ));
     }
 

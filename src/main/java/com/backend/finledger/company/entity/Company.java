@@ -49,6 +49,9 @@ public class Company extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    @Column(name = "allow_negative_stock", nullable = false)
+    private Boolean allowNegativeStock = false;
+
     public Company() {}
 
     public Long getId() {
@@ -145,6 +148,14 @@ public class Company extends BaseEntity {
 
     public void setIsActive(Boolean active) {
         isActive = active;
+    }
+
+    public Boolean getAllowNegativeStock() {
+        return allowNegativeStock;
+    }
+
+    public void setAllowNegativeStock(Boolean allowNegativeStock) {
+        this.allowNegativeStock = allowNegativeStock;
     }
 }
 

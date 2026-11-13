@@ -9,6 +9,11 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import jakarta.persistence.Entity;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.PostRemove;
@@ -17,10 +22,13 @@ import jakarta.persistence.PreRemove;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,7 +52,14 @@ public class AuditEntityListener {
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-    private static final Map<Integer, String> PRE_IMAGE_CACHE = new ConcurrentHashMap<>();
+    private static final int MAX_PRE_IMAGE_CACHE = 2048;
+    private static final Map<Integer, String> PRE_IMAGE_CACHE = Collections.synchronizedMap(
+            new LinkedHashMap<>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Integer, String> eldest) {
+                    return size() > MAX_PRE_IMAGE_CACHE;
+                }
+            });
     private static final ThreadLocal<AuditAction> ACTION_OVERRIDE = new ThreadLocal<>();
 
     public static void setActionOverride(AuditAction action) {
@@ -215,11 +230,47 @@ public class AuditEntityListener {
             return null;
         }
         try {
+            if (obj.getClass().isAnnotationPresent(Entity.class)) {
+                return OBJECT_MAPPER.writeValueAsString(extractEntityScalarSnapshot(obj));
+            }
             return OBJECT_MAPPER.writeValueAsString(obj);
         } catch (Exception e) {
             log.trace("JSON serialization error: {}", e.getMessage());
-            return "{\"error\":\"Serialization failed: " + e.getMessage() + "\"}";
+            String msg = e.getMessage() != null ? e.getMessage().replace("\"", "'") : "unknown";
+            return "{\"error\":\"Serialization failed: " + msg + "\"}";
         }
+    }
+
+    private static Map<String, Object> extractEntityScalarSnapshot(Object entity) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        Class<?> current = entity.getClass();
+        while (current != null && current != Object.class && !current.getName().contains("$HibernateProxy")) {
+            for (Field field : current.getDeclaredFields()) {
+                int mod = field.getModifiers();
+                if (Modifier.isStatic(mod) || Modifier.isTransient(mod) || field.isSynthetic()) {
+                    continue;
+                }
+                if (field.isAnnotationPresent(OneToMany.class)
+                        || field.isAnnotationPresent(ManyToMany.class)
+                        || field.isAnnotationPresent(ManyToOne.class)
+                        || field.isAnnotationPresent(OneToOne.class)) {
+                    continue;
+                }
+                if (Collection.class.isAssignableFrom(field.getType()) || Map.class.isAssignableFrom(field.getType())) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    Object val = field.get(entity);
+                    if (val != null) {
+                        snapshot.putIfAbsent(field.getName(), val);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return snapshot;
     }
 
     private Long extractId(Object entity) {

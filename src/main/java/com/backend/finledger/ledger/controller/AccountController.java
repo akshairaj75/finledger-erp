@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,6 +27,7 @@ public class AccountController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','INVOICE_CREATE','BILL_CREATE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<PageResponse<AccountDto>> listAccounts(
             @RequestParam(required = false) AccountType type,
             @RequestParam(required = false) Boolean active,
@@ -35,26 +37,31 @@ public class AccountController {
     }
 
     @GetMapping("/tree")
+    @PreAuthorize("hasAnyAuthority('ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','INVOICE_CREATE','BILL_CREATE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<List<AccountNodeDto>> getTree() {
         return ResponseEntity.ok(accountService.getAccountsTree());
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','INVOICE_CREATE','BILL_CREATE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<AccountDto> getAccount(@PathVariable Long id) {
         return ResponseEntity.ok(accountService.getAccountById(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('ACCOUNT_CREATE') or hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<AccountDto> createAccount(@Valid @RequestBody AccountRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(accountService.createAccount(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ACCOUNT_EDIT') or hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<AccountDto> updateAccount(@PathVariable Long id, @Valid @RequestBody AccountRequest request) {
         return ResponseEntity.ok(accountService.updateAccount(id, request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ACCOUNT_DELETE') or hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<Void> deleteAccount(@PathVariable Long id) {
         accountService.deleteAccount(id);
         return ResponseEntity.noContent().build();

@@ -4,6 +4,10 @@ import com.backend.finledger.audit.AuditEntityListener;
 import com.backend.finledger.audit.entity.AuditAction;
 import com.backend.finledger.audit.entity.AuditLog;
 import com.backend.finledger.audit.repository.AuditLogRepository;
+import com.backend.finledger.ledger.entity.Account;
+import com.backend.finledger.ledger.entity.AccountType;
+import com.backend.finledger.ledger.entity.NormalBalance;
+import com.backend.finledger.ledger.repository.AccountRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +24,9 @@ class AuditLogTest {
 
     @Autowired
     private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private AccountRepository accountRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -73,5 +80,34 @@ class AuditLogTest {
         List<AuditLog> logs = auditLogRepository.findByEntityNameAndEntityIdOrderByCreatedAtDesc("Invoice", 9414L);
         boolean hasPost = logs.stream().anyMatch(l -> l.getAction() == AuditAction.POST);
         assertTrue(hasPost);
+    }
+
+    @Test
+    @DisplayName("Should automatically capture CREATE and UPDATE audit logs via JPA entity listener on BaseEntity")
+    void testJpaEntityListenerAutoAuditCapture() {
+        String code = "AUD" + (System.nanoTime() % 1_000_000_000L);
+        Account account = new Account(
+                testCompanyId,
+                code,
+                "Audit Trail Account",
+                AccountType.EXPENSE,
+                "EXPENSE",
+                null,
+                false,
+                NormalBalance.DEBIT
+        );
+        Account created = accountRepository.saveAndFlush(account);
+
+        created.setName("Audit Trail Account Updated");
+        Account updated = accountRepository.saveAndFlush(created);
+
+        List<AuditLog> logs = auditLogRepository.findByEntityNameAndEntityIdOrderByCreatedAtDesc("Account", updated.getId());
+        assertTrue(logs.stream().anyMatch(l -> l.getAction() == AuditAction.CREATE && l.getNewValues() != null),
+                "Expected automatic CREATE audit log from AuditEntityListener");
+        assertTrue(logs.stream().anyMatch(l -> l.getAction() == AuditAction.UPDATE
+                        && l.getOldValues() != null && l.getNewValues() != null),
+                "Expected automatic UPDATE audit log with before/after JSON from AuditEntityListener");
+
+        accountRepository.delete(updated);
     }
 }

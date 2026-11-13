@@ -13,6 +13,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,6 +30,7 @@ public class LeadController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('LEAD_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<PageResponse<LeadDto>> getLeads(
             @RequestParam(required = false) LeadStatus status,
             @RequestParam(required = false) LeadSource source,
@@ -39,31 +41,37 @@ public class LeadController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('LEAD_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<LeadDto> getLeadById(@PathVariable Long id) {
         return ResponseEntity.ok(leadService.getLeadById(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('LEAD_CREATE')")
     public ResponseEntity<LeadDto> createLead(@Valid @RequestBody LeadRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(leadService.createLead(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('LEAD_EDIT')")
     public ResponseEntity<LeadDto> updateLead(@PathVariable Long id, @Valid @RequestBody LeadRequest request) {
         return ResponseEntity.ok(leadService.updateLead(id, request));
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('LEAD_CREATE')")
     public ResponseEntity<LeadImportResultDto> importLeads(@RequestParam("file") MultipartFile file) {
         return ResponseEntity.ok(leadService.importLeadsFromCsv(file));
     }
 
     @PostMapping("/{id}/qualify")
+    @PreAuthorize("hasAuthority('LEAD_EDIT')")
     public ResponseEntity<OpportunityDto> qualifyLead(@PathVariable Long id) {
         return ResponseEntity.ok(leadService.qualifyLead(id));
     }
 
     @PostMapping("/{id}/convert")
+    @PreAuthorize("hasAuthority('LEAD_CONVERT')")
     public ResponseEntity<LeadConvertResponse> convertLead(
             @PathVariable Long id,
             @RequestBody(required = false) LeadConvertRequest request) {

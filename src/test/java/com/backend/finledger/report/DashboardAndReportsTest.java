@@ -48,6 +48,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -150,7 +151,6 @@ class DashboardAndReportsTest {
         when(stageRepository.findByCompanyIdOrderBySortOrderAsc(1L)).thenReturn(List.of(stage));
 
         when(itemRepository.findByCompanyIdAndIsActiveTrue(1L)).thenReturn(Collections.emptyList());
-        when(stockBalanceRepository.findAll()).thenReturn(Collections.emptyList());
 
         when(expenseRepository.countAwaitingApproval(1L)).thenReturn(2L);
         when(expenseRepository.searchExpenses(eq(1L), any(), any(), any(), any(), any(), any()))
@@ -223,5 +223,37 @@ class DashboardAndReportsTest {
         assertEquals(BigDecimal.valueOf(60000), pnl.grossProfit());
         assertEquals(BigDecimal.valueOf(25000), pnl.totalExpenses());
         assertEquals(BigDecimal.valueOf(35000), pnl.netProfit());
+    }
+
+    @Test
+    @DisplayName("Should export Balance Sheet Excel and Profit & Loss PDF with forwarded date filters")
+    void testReportExportAllTypesWithParams() {
+        Account cashAcc = new Account();
+        cashAcc.setId(101L);
+        cashAcc.setCode("1110");
+        cashAcc.setName("Bank");
+        cashAcc.setAccountType(AccountType.ASSET);
+        cashAcc.setSubType("BANK");
+        cashAcc.setNormalBalance(NormalBalance.DEBIT);
+
+        when(accountRepository.findByCompanyIdOrderByCodeAsc(1L)).thenReturn(List.of(cashAcc));
+        when(journalLineRepository.getAccountBalanceSummaries(eq(1L), eq(LocalDate.of(2026, 10, 31))))
+                .thenReturn(Collections.emptyList());
+        when(journalLineRepository.getAccountBalanceSummariesBetween(
+                eq(1L), eq(LocalDate.of(2026, 1, 1)), eq(LocalDate.of(2026, 10, 31)), eq(null)))
+                .thenReturn(Collections.emptyList());
+
+        byte[] xlsxBytes = reportService.exportReport("balance-sheet", "xlsx", Map.of("asOf", "2026-10-31"));
+        assertNotNull(xlsxBytes);
+        assertTrue(xlsxBytes.length > 0);
+        // XLSX files begin with PK zip magic header
+        assertEquals('P', (char) xlsxBytes[0]);
+        assertEquals('K', (char) xlsxBytes[1]);
+
+        byte[] pdfBytes = reportService.exportReport("profit-loss", "pdf",
+                Map.of("from", "2026-01-01", "to", "2026-10-31"));
+        assertNotNull(pdfBytes);
+        assertTrue(pdfBytes.length > 0);
+        assertEquals("%PDF", new String(pdfBytes, 0, 4));
     }
 }

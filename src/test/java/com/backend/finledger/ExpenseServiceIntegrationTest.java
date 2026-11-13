@@ -128,9 +128,9 @@ class ExpenseServiceIntegrationTest extends BaseIntegrationTest {
     @Transactional
     @DisplayName("1. Block Self-Approval: Claimant attempting to approve their own claim throws SELF_APPROVAL_NOT_ALLOWED")
     void testSelfApprovalBlocking() {
-        // Authenticate as claimant to create category and claim
+        // Authenticate with SETTINGS_EDIT to create test category, then switch to claimant perms
         authenticateAs(claimantUserId, "claimant.test@finledger.com", "Test Claimant",
-                Set.of("EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE"));
+                Set.of("SETTINGS_EDIT", "EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE"));
 
         ExpenseCategoryDto category = categoryService.createCategory(new ExpenseCategoryRequest(
                 "Supplies-" + UUID.randomUUID().toString().substring(0, 4),
@@ -140,6 +140,9 @@ class ExpenseServiceIntegrationTest extends BaseIntegrationTest {
                 false,
                 true
         ));
+
+        authenticateAs(claimantUserId, "claimant.test@finledger.com", "Test Claimant",
+                Set.of("EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE"));
 
         ExpenseDto draft = expenseService.createExpense(new CreateExpenseRequest(
                 LocalDate.now(),
@@ -173,7 +176,7 @@ class ExpenseServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("2. Per-Claim Limit Enforcement: Claim line exceeding category limitPerClaim throws POLICY_LIMIT_EXCEEDED")
     void testPerClaimPolicyLimitEnforcement() {
         authenticateAs(claimantUserId, "claimant.test@finledger.com", "Test Claimant",
-                Set.of("EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE"));
+                Set.of("SETTINGS_EDIT", "EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE"));
 
         // Create category with per-claim limit = 200.00 AED
         ExpenseCategoryDto category = categoryService.createCategory(new ExpenseCategoryRequest(
@@ -184,6 +187,9 @@ class ExpenseServiceIntegrationTest extends BaseIntegrationTest {
                 false,
                 true
         ));
+
+        authenticateAs(claimantUserId, "claimant.test@finledger.com", "Test Claimant",
+                Set.of("EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_APPROVE"));
 
         // Create claim with line amount = 350.00 AED (> 200.00 AED limit)
         ExpenseDto draft = expenseService.createExpense(new CreateExpenseRequest(

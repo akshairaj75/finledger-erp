@@ -25,7 +25,7 @@ public class CompanyServiceImpl implements CompanyService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('COMPANY_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('SETTINGS_EDIT','SETTINGS_VIEW','COMPANY_VIEW')")
     public CompanyDto getCurrentCompany() {
         Long companyId = CurrentUser.getCompanyId();
         Company company = companyRepository.findById(companyId)

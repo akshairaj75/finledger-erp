@@ -32,6 +32,25 @@ public interface BillRepository extends JpaRepository<Bill, Long> {
 
     Page<Bill> findByCompanyIdAndVendorId(Long companyId, Long vendorId, Pageable pageable);
 
+    @Query("SELECT b FROM Bill b WHERE b.companyId = :companyId " +
+           "AND (:vendorId IS NULL OR b.vendorId = :vendorId) " +
+           "AND (:status IS NULL OR b.status = :status) " +
+           "AND (:fromDate IS NULL OR b.billDate >= :fromDate) " +
+           "AND (:toDate IS NULL OR b.billDate <= :toDate) " +
+           "AND (:q IS NULL OR LOWER(b.billNo) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "     OR LOWER(COALESCE(b.vendorInvoiceNo, '')) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "     OR EXISTS (SELECT 1 FROM Vendor v WHERE v.id = b.vendorId " +
+           "                AND (LOWER(v.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "                     OR LOWER(v.code) LIKE LOWER(CONCAT('%', :q, '%')))))")
+    Page<Bill> searchBills(
+            @Param("companyId") Long companyId,
+            @Param("vendorId") Long vendorId,
+            @Param("status") BillStatus status,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("q") String q,
+            Pageable pageable);
+
     List<Bill> findByCompanyIdAndVendorIdAndStatusInAndBalanceDueGreaterThan(
             Long companyId, Long vendorId, Collection<BillStatus> statuses, BigDecimal minBalance);
 

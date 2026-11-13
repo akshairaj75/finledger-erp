@@ -21,6 +21,7 @@ import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.ledger.repository.JournalLineRepository;
 import com.backend.finledger.ledger.service.PostingService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +33,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@PreAuthorize("hasAuthority('BANK_RECONCILE')")
 public class BankReconciliationServiceImpl implements BankReconciliationService {
 
     private final BankReconciliationRepository reconciliationRepository;

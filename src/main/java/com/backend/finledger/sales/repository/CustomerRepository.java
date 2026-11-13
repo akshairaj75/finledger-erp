@@ -21,6 +21,8 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     boolean existsByCompanyIdAndCode(Long companyId, String code);
 
+    long countByCompanyId(Long companyId);
+
     Page<Customer> findByCompanyId(Long companyId, Pageable pageable);
 
     Page<Customer> findByCompanyIdAndNameContainingIgnoreCase(Long companyId, String name, Pageable pageable);

@@ -200,7 +200,7 @@ public class LeadConversionServiceImpl implements LeadConversionService {
     }
 
     private String generateUniqueCustomerCode(Long companyId) {
-        long count = customerRepository.count() + 1;
+        long count = customerRepository.countByCompanyId(companyId) + 1;
         String candidate = String.format("CUST-%04d", count);
         while (customerRepository.existsByCompanyIdAndCode(companyId, candidate)) {
             count++;

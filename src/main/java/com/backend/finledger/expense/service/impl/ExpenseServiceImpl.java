@@ -732,4 +732,37 @@ public class ExpenseServiceImpl implements ExpenseService {
                 approvalDtos
         );
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('INVOICE_CREATE') or hasAuthority('EXPENSE_VIEW')")
+    public List<ExpenseLineDto> getBillableExpenseLines(Long customerId) {
+        Long companyId = CurrentUser.getCompanyId();
+        return expenseLineRepository.findBillableLines(companyId, customerId).stream()
+                .map(line -> {
+                    ExpenseCategory cat = categoryRepository.findById(line.getCategoryId()).orElse(null);
+                    Account acc = accountRepository.findById(line.getAccountId()).orElse(null);
+                    String taxCode = line.getTaxRateId() != null
+                            ? taxRateRepository.findById(line.getTaxRateId()).map(TaxRate::getCode).orElse(null)
+                            : null;
+                    return new ExpenseLineDto(
+                            line.getId(),
+                            line.getLineNo(),
+                            line.getCategoryId(),
+                            cat != null ? cat.getName() : null,
+                            line.getAccountId(),
+                            acc != null ? acc.getCode() : null,
+                            acc != null ? acc.getName() : null,
+                            line.getDescription(),
+                            line.getAmount(),
+                            line.getTaxRateId(),
+                            taxCode,
+                            line.getTaxAmount(),
+                            line.getCostCenterId(),
+                            line.getCustomerId(),
+                            line.getIsBillable()
+                    );
+                })
+                .toList();
+    }
 }

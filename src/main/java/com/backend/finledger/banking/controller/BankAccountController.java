@@ -22,6 +22,7 @@ public class BankAccountController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('BANK_RECONCILE','COMPANY_VIEW','SETTINGS_VIEW','SETTINGS_EDIT','RECEIPT_CREATE','RECEIPT_VIEW','PAYMENT_CREATE','PAYMENT_VIEW','EXPENSE_CREATE','EXPENSE_VIEW','EXPENSE_REIMBURSE')")
     public ResponseEntity<List<BankAccountDto>> listBankAccounts(
             @RequestParam(required = false, defaultValue = "true") Boolean activeOnly) {
         if (Boolean.TRUE.equals(activeOnly)) {
@@ -32,18 +33,19 @@ public class BankAccountController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('BANK_RECONCILE','COMPANY_VIEW','SETTINGS_VIEW','SETTINGS_EDIT','RECEIPT_CREATE','RECEIPT_VIEW','PAYMENT_CREATE','PAYMENT_VIEW','EXPENSE_CREATE','EXPENSE_VIEW','EXPENSE_REIMBURSE')")
     public ResponseEntity<BankAccountDto> getBankAccount(@PathVariable Long id) {
         return ResponseEntity.ok(bankAccountService.getBankAccountById(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT') or hasRole('ADMIN') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<BankAccountDto> createBankAccount(@Valid @RequestBody BankAccountRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(bankAccountService.createBankAccount(request));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT') or hasRole('ADMIN') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<BankAccountDto> updateBankAccount(
             @PathVariable Long id,
             @Valid @RequestBody BankAccountRequest request) {
@@ -51,7 +53,7 @@ public class BankAccountController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT') or hasRole('ADMIN') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<Void> deleteBankAccount(@PathVariable Long id) {
         bankAccountService.deleteBankAccount(id);
         return ResponseEntity.noContent().build();

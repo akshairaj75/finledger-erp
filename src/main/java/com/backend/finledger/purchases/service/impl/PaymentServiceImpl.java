@@ -163,6 +163,7 @@ public class PaymentServiceImpl implements PaymentService {
         String paymentNo = numberSeriesService.generateNextNumber(companyId, DocType.PAYMENT);
         payment.setPaymentNo(paymentNo);
         payment.setStatus(PaymentStatus.POSTED);
+        payment = paymentRepository.save(payment);
 
         List<JournalLineRequest> journalLines = List.of(
                 new JournalLineRequest(

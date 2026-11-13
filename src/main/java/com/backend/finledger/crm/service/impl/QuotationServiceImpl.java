@@ -309,7 +309,28 @@ public class QuotationServiceImpl implements QuotationService {
                 invoiceLines
         );
 
+        boolean wasAccepted = quotation.getStatus() == QuotationStatus.ACCEPTED;
         InvoiceDto invoiceDto = invoiceService.createInvoice(invoiceRequest);
+
+        if (wasAccepted && warehouse != null) {
+            for (QuotationLine ql : quotation.getLines()) {
+                if (ql.getItemId() != null) {
+                    Item item = itemRepository.findByCompanyIdAndId(companyId, ql.getItemId()).orElse(null);
+                    if (item != null && item.getItemType() == ItemType.INVENTORY) {
+                        stockBalanceRepository.findByItemIdAndWarehouseIdWithLock(item.getId(), warehouse.getId())
+                                .ifPresent(balance -> {
+                                    BigDecimal currentReserved = balance.getQtyReserved() != null
+                                            ? balance.getQtyReserved() : BigDecimal.ZERO;
+                                    BigDecimal qtyToRelease = ql.getQuantity() != null
+                                            ? ql.getQuantity() : BigDecimal.ZERO;
+                                    BigDecimal updated = currentReserved.subtract(qtyToRelease);
+                                    balance.setQtyReserved(updated.compareTo(BigDecimal.ZERO) > 0 ? updated : BigDecimal.ZERO);
+                                    stockBalanceRepository.save(balance);
+                                });
+                    }
+                }
+            }
+        }
 
         quotation.setStatus(QuotationStatus.INVOICED);
         quotation.setInvoiceId(invoiceDto.id());

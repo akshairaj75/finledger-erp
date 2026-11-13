@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,6 +24,7 @@ public class ExpenseCategoryController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<PageResponse<ExpenseCategoryDto>> getCategories(
             @RequestParam(required = false) Boolean active,
             @RequestParam(required = false) String q,
@@ -31,21 +33,25 @@ public class ExpenseCategoryController {
     }
 
     @GetMapping("/all")
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<List<ExpenseCategoryDto>> getAllActiveCategories() {
         return ResponseEntity.ok(categoryService.getAllActiveCategories());
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<ExpenseCategoryDto> getCategoryById(@PathVariable Long id) {
         return ResponseEntity.ok(categoryService.getCategoryById(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<ExpenseCategoryDto> createCategory(@Valid @RequestBody ExpenseCategoryRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(categoryService.createCategory(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<ExpenseCategoryDto> updateCategory(
             @PathVariable Long id,
             @Valid @RequestBody ExpenseCategoryRequest request) {

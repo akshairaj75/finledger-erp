@@ -12,6 +12,7 @@ import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.security.CurrentUser;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public PageResponse<ExpenseCategoryDto> getCategories(Boolean active, String q, Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
         Page<ExpenseCategory> page = categoryRepository.searchCategories(companyId, active, q, pageable);
@@ -40,6 +42,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public List<ExpenseCategoryDto> getAllActiveCategories() {
         Long companyId = CurrentUser.getCompanyId();
         return categoryRepository.findByCompanyIdOrderByNameAsc(companyId).stream()
@@ -50,6 +53,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public ExpenseCategoryDto getCategoryById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         ExpenseCategory category = categoryRepository.findByCompanyIdAndId(companyId, id)
@@ -59,6 +63,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT')")
     public ExpenseCategoryDto createCategory(ExpenseCategoryRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -91,6 +96,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT')")
     public ExpenseCategoryDto updateCategory(Long id, ExpenseCategoryRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 

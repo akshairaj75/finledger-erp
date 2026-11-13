@@ -12,6 +12,7 @@ import com.backend.finledger.banking.repository.BankStatementRepository;
 import com.backend.finledger.banking.service.BankStatementService;
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,6 +28,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@PreAuthorize("hasAuthority('BANK_RECONCILE')")
 public class BankStatementServiceImpl implements BankStatementService {
 
     private final BankStatementRepository bankStatementRepository;

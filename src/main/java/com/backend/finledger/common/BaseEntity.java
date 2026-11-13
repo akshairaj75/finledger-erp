@@ -1,6 +1,8 @@
 package com.backend.finledger.common;
 
+import com.backend.finledger.audit.AuditEntityListener;
 import jakarta.persistence.Column;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -12,6 +14,7 @@ import java.time.Instant;
  * and optimistic locking (@Version INT version).
  */
 @MappedSuperclass
+@EntityListeners(AuditEntityListener.class)
 public abstract class BaseEntity {
 
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -1,6 +1,8 @@
 package com.backend.finledger.inventory.service.impl;
 
 import com.backend.finledger.common.BusinessException;
+import com.backend.finledger.company.entity.Company;
+import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.inventory.dto.StockBalanceDto;
 import com.backend.finledger.inventory.entity.*;
 import com.backend.finledger.inventory.repository.ItemRepository;
@@ -10,6 +12,7 @@ import com.backend.finledger.inventory.repository.WarehouseRepository;
 import com.backend.finledger.inventory.service.CostingService;
 import com.backend.finledger.inventory.service.StockService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,7 @@ public class StockServiceImpl implements StockService {
     private final ItemRepository itemRepository;
     private final WarehouseRepository warehouseRepository;
     private final CostingService costingService;
+    private final CompanyRepository companyRepository;
 
     public StockServiceImpl(
             StockBalanceRepository stockBalanceRepository,
@@ -36,11 +40,23 @@ public class StockServiceImpl implements StockService {
             ItemRepository itemRepository,
             WarehouseRepository warehouseRepository,
             CostingService costingService) {
+        this(stockBalanceRepository, stockMovementRepository, itemRepository, warehouseRepository, costingService, null);
+    }
+
+    @Autowired
+    public StockServiceImpl(
+            StockBalanceRepository stockBalanceRepository,
+            StockMovementRepository stockMovementRepository,
+            ItemRepository itemRepository,
+            WarehouseRepository warehouseRepository,
+            CostingService costingService,
+            CompanyRepository companyRepository) {
         this.stockBalanceRepository = stockBalanceRepository;
         this.stockMovementRepository = stockMovementRepository;
         this.itemRepository = itemRepository;
         this.warehouseRepository = warehouseRepository;
         this.costingService = costingService;
+        this.companyRepository = companyRepository;
     }
 
     @Override
@@ -118,13 +134,28 @@ public class StockServiceImpl implements StockService {
             throw new BusinessException("INVALID_QUANTITY", "Issued quantity must be greater than zero");
         }
 
+        boolean allowNegativeStock = companyRepository != null && Boolean.TRUE.equals(
+                companyRepository.findById(companyId).map(Company::getAllowNegativeStock).orElse(false));
+
         // Lock row with SELECT ... FOR UPDATE (pessimistic write)
         StockBalance balance = stockBalanceRepository.findByItemIdAndWarehouseIdWithLock(itemId, warehouseId)
-                .orElseThrow(() -> new BusinessException("INSUFFICIENT_STOCK",
-                        "No stock record found for item " + itemId + " in warehouse " + warehouseId));
+                .orElseGet(() -> {
+                    if (!allowNegativeStock) {
+                        throw new BusinessException("INSUFFICIENT_STOCK",
+                                "No stock record found for item " + itemId + " in warehouse " + warehouseId);
+                    }
+                    Item item = itemRepository.findById(itemId).orElse(null);
+                    BigDecimal fallbackCost = (item != null && item.getPurchasePrice() != null)
+                            ? item.getPurchasePrice() : BigDecimal.ZERO;
+                    StockBalance created = new StockBalance(itemId, warehouseId);
+                    created.setQtyOnHand(BigDecimal.ZERO);
+                    created.setAvgCost(fallbackCost);
+                    created.setStockValue(BigDecimal.ZERO);
+                    return created;
+                });
 
         BigDecimal currentQty = balance.getQtyOnHand();
-        if (currentQty.compareTo(quantity) < 0) {
+        if (!allowNegativeStock && currentQty.compareTo(quantity) < 0) {
             Item item = itemRepository.findById(itemId).orElse(null);
             Warehouse wh = warehouseRepository.findById(warehouseId).orElse(null);
             String itemLabel = (item != null) ? item.getSku() : String.valueOf(itemId);

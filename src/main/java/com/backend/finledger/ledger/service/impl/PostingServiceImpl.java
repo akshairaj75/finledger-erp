@@ -59,7 +59,7 @@ public class PostingServiceImpl implements PostingService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('JOURNAL_VIEW') or hasAuthority('LEDGER_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('JOURNAL_VIEW','LEDGER_VIEW','REPORT_VIEW','ACCOUNT_VIEW')")
     public PageResponse<JournalEntryDto> getJournalEntries(
             LocalDate from, LocalDate to, JournalStatus status, JournalSourceType sourceType, Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
@@ -69,7 +69,7 @@ public class PostingServiceImpl implements PostingService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('JOURNAL_VIEW') or hasAuthority('LEDGER_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('JOURNAL_VIEW','LEDGER_VIEW','REPORT_VIEW','ACCOUNT_VIEW')")
     public JournalEntryDto getJournalEntryById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         JournalEntry entry = journalEntryRepository.findByCompanyIdAndId(companyId, id)

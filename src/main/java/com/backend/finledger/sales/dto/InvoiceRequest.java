@@ -28,6 +28,22 @@ public record InvoiceRequest(
 
         @NotEmpty(message = "Invoice must contain at least one line")
         @Valid
-        List<InvoiceLineRequest> lines
-) {}
+        List<InvoiceLineRequest> lines,
+
+        Boolean send
+) {
+    public InvoiceRequest(
+            InvoiceDocType docType,
+            Long customerId,
+            LocalDate invoiceDate,
+            LocalDate dueDate,
+            String currencyCode,
+            BigDecimal exchangeRate,
+            String notes,
+            Long quotationId,
+            Long salespersonUserId,
+            List<InvoiceLineRequest> lines) {
+        this(docType, customerId, invoiceDate, dueDate, currencyCode, exchangeRate, notes, quotationId, salespersonUserId, lines, null);
+    }
+}
 

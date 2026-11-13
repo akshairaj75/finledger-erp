@@ -10,6 +10,7 @@ import com.backend.finledger.crm.service.ContactService;
 import com.backend.finledger.security.CurrentUser;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +27,7 @@ public class ContactServiceImpl implements ContactService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('LEAD_VIEW','OPPORTUNITY_VIEW','CUSTOMER_VIEW','CRM_VIEW_ALL')")
     public PageResponse<ContactDto> getContacts(Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
         Page<Contact> page = contactRepository.findByCompanyId(companyId, pageable);
@@ -35,6 +37,7 @@ public class ContactServiceImpl implements ContactService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('LEAD_VIEW','OPPORTUNITY_VIEW','CUSTOMER_VIEW','CRM_VIEW_ALL')")
     public List<ContactDto> getContactsByCustomer(Long customerId) {
         Long companyId = CurrentUser.getCompanyId();
         return contactRepository.findByCompanyIdAndCustomerId(companyId, customerId)
@@ -43,6 +46,7 @@ public class ContactServiceImpl implements ContactService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('LEAD_VIEW','OPPORTUNITY_VIEW','CUSTOMER_VIEW','CRM_VIEW_ALL')")
     public List<ContactDto> getContactsByLead(Long leadId) {
         Long companyId = CurrentUser.getCompanyId();
         return contactRepository.findByCompanyIdAndLeadId(companyId, leadId)
@@ -51,6 +55,7 @@ public class ContactServiceImpl implements ContactService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('LEAD_VIEW','OPPORTUNITY_VIEW','CUSTOMER_VIEW','CRM_VIEW_ALL')")
     public ContactDto getContactById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Contact contact = contactRepository.findByCompanyIdAndId(companyId, id)
@@ -60,6 +65,7 @@ public class ContactServiceImpl implements ContactService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAnyAuthority('LEAD_CREATE','LEAD_EDIT','CUSTOMER_CREATE','CUSTOMER_EDIT','OPPORTUNITY_EDIT')")
     public ContactDto createContact(ContactRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -84,6 +90,7 @@ public class ContactServiceImpl implements ContactService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAnyAuthority('LEAD_EDIT','CUSTOMER_EDIT','OPPORTUNITY_EDIT')")
     public ContactDto updateContact(Long id, ContactRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         Contact contact = contactRepository.findByCompanyIdAndId(companyId, id)
@@ -106,6 +113,7 @@ public class ContactServiceImpl implements ContactService {
     }
 
     @Override
+    @PreAuthorize("hasAnyAuthority('LEAD_EDIT','CUSTOMER_EDIT','OPPORTUNITY_EDIT','CRM_VIEW_ALL')")
     public void deleteContact(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Contact contact = contactRepository.findByCompanyIdAndId(companyId, id)

@@ -22,11 +22,13 @@ public class CrmPipelineStageController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('OPPORTUNITY_VIEW','CRM_VIEW_ALL','SETTINGS_VIEW','SETTINGS_EDIT','REPORT_VIEW')")
     public ResponseEntity<List<CrmPipelineStageDto>> getStages() {
         return ResponseEntity.ok(stageService.getStages());
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('OPPORTUNITY_VIEW','CRM_VIEW_ALL','SETTINGS_VIEW','SETTINGS_EDIT','REPORT_VIEW')")
     public ResponseEntity<CrmPipelineStageDto> getStageById(@PathVariable Long id) {
         return ResponseEntity.ok(stageService.getStageById(id));
     }

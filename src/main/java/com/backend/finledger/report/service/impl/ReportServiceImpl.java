@@ -6,6 +6,7 @@ import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.crm.entity.CrmPipelineStage;
 import com.backend.finledger.crm.entity.Opportunity;
 import com.backend.finledger.crm.entity.StageType;
+import com.backend.finledger.crm.repository.CrmActivityRepository;
 import com.backend.finledger.crm.repository.CrmPipelineStageRepository;
 import com.backend.finledger.crm.repository.OpportunityRepository;
 import com.backend.finledger.expense.entity.Expense;
@@ -55,6 +56,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -92,6 +94,7 @@ public class ReportServiceImpl implements ReportService {
     private final ApAgeingService apAgeingService;
     private final InvoiceRepository invoiceRepository;
     private final BillRepository billRepository;
+    private final CrmActivityRepository crmActivityRepository;
 
     public ReportServiceImpl(
             AccountRepository accountRepository,
@@ -111,6 +114,33 @@ public class ReportServiceImpl implements ReportService {
             ApAgeingService apAgeingService,
             InvoiceRepository invoiceRepository,
             BillRepository billRepository) {
+        this(accountRepository, journalLineRepository, journalEntryRepository, bankAccountRepository,
+                opportunityRepository, stageRepository, stockBalanceRepository, stockMovementRepository,
+                itemRepository, itemCategoryRepository, warehouseRepository, expenseRepository,
+                expenseCategoryRepository, arAgeingService, apAgeingService, invoiceRepository,
+                billRepository, null);
+    }
+
+    @Autowired
+    public ReportServiceImpl(
+            AccountRepository accountRepository,
+            JournalLineRepository journalLineRepository,
+            JournalEntryRepository journalEntryRepository,
+            BankAccountRepository bankAccountRepository,
+            OpportunityRepository opportunityRepository,
+            CrmPipelineStageRepository stageRepository,
+            StockBalanceRepository stockBalanceRepository,
+            StockMovementRepository stockMovementRepository,
+            ItemRepository itemRepository,
+            ItemCategoryRepository itemCategoryRepository,
+            WarehouseRepository warehouseRepository,
+            ExpenseRepository expenseRepository,
+            ExpenseCategoryRepository expenseCategoryRepository,
+            ArAgeingService arAgeingService,
+            ApAgeingService apAgeingService,
+            InvoiceRepository invoiceRepository,
+            BillRepository billRepository,
+            CrmActivityRepository crmActivityRepository) {
         this.accountRepository = accountRepository;
         this.journalLineRepository = journalLineRepository;
         this.journalEntryRepository = journalEntryRepository;
@@ -128,11 +158,12 @@ public class ReportServiceImpl implements ReportService {
         this.apAgeingService = apAgeingService;
         this.invoiceRepository = invoiceRepository;
         this.billRepository = billRepository;
+        this.crmActivityRepository = crmActivityRepository;
     }
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW')")
     public GeneralLedgerReportDto getGeneralLedgerReport(Long accountId, LocalDate from, LocalDate to) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -203,7 +234,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('LEDGER_VIEW')")
     public TrialBalanceReportDto getTrialBalanceReport(LocalDate asOf) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate asOfDate = asOf != null ? asOf : LocalDate.now();
@@ -277,7 +308,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('DASHBOARD_VIEW') or hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('DASHBOARD_VIEW') or hasAuthority('REPORT_VIEW')")
     public DashboardSummaryDto getDashboardSummary(LocalDate from, LocalDate to) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate toDate = to != null ? to : LocalDate.now();
@@ -352,11 +383,13 @@ public class ReportServiceImpl implements ReportService {
             }
         }
 
-        // Inventory total value & low stock count
+        // Inventory total value & low stock count (tenant-scoped by company items)
         List<Item> items = itemRepository.findByCompanyIdAndIsActiveTrue(companyId);
-        Map<Long, List<StockBalance>> stockMap = stockBalanceRepository.findAll().stream()
-                .filter(sb -> items.stream().anyMatch(i -> i.getId().equals(sb.getItemId())))
-                .collect(Collectors.groupingBy(StockBalance::getItemId));
+        List<Long> itemIds = items.stream().map(Item::getId).toList();
+        Map<Long, List<StockBalance>> stockMap = itemIds.isEmpty()
+                ? Map.of()
+                : stockBalanceRepository.findByItemIdIn(itemIds).stream()
+                        .collect(Collectors.groupingBy(StockBalance::getItemId));
 
         BigDecimal totalInventoryValue = BigDecimal.ZERO;
         long lowStockItemCount = 0;
@@ -443,6 +476,10 @@ public class ReportServiceImpl implements ReportService {
                 ))
                 .collect(Collectors.toList());
 
+        long overdueActivitiesCount = crmActivityRepository != null
+                ? crmActivityRepository.countOverdueActivities(companyId, java.time.Instant.now())
+                : 0L;
+
         return new DashboardSummaryDto(
                 totalRevenueYtd,
                 totalExpensesYtd,
@@ -457,13 +494,14 @@ public class ReportServiceImpl implements ReportService {
                 expensesAwaitingApprovalAmount,
                 monthlyRevenueExpenses,
                 receivablesAgeing,
-                recentTransactions
+                recentTransactions,
+                overdueActivitiesCount
         );
     }
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public ProfitLossReportDto getProfitLossReport(LocalDate from, LocalDate to, String compare, Long costCenterId) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate fromDate = from != null ? from : LocalDate.of(LocalDate.now().getYear(), 1, 1);
@@ -575,7 +613,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public BalanceSheetReportDto getBalanceSheetReport(LocalDate asOf, String compare) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate asOfDate = asOf != null ? asOf : LocalDate.now();
@@ -683,7 +721,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public VatReturnReportDto getVatReturnReport(LocalDate from, LocalDate to) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate fromDate = from != null ? from : LocalDate.of(LocalDate.now().getYear(), 1, 1);
@@ -735,7 +773,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('ITEM_VIEW')")
     public StockValuationReportDto getStockValuationReport(LocalDate asOf, Long warehouseId) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate asOfDate = asOf != null ? asOf : LocalDate.now();
@@ -799,7 +837,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('ITEM_VIEW')")
     public StockMovementReportDto getStockMovementReport(Long itemId, LocalDate from, LocalDate to) {
         Long companyId = CurrentUser.getCompanyId();
         Item item = itemRepository.findByCompanyIdAndId(companyId, itemId)
@@ -863,7 +901,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public PipelineForecastReportDto getPipelineForecastReport(LocalDate from, LocalDate to, Long ownerId) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate fromDate = from != null ? from : LocalDate.of(LocalDate.now().getYear(), 1, 1);
@@ -918,7 +956,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('EXPENSE_APPROVE')")
     public ExpenseAnalysisReportDto getExpenseAnalysisReport(LocalDate from, LocalDate to, String groupBy) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate fromDate = from != null ? from : LocalDate.of(LocalDate.now().getYear(), 1, 1);
@@ -978,78 +1016,216 @@ public class ReportServiceImpl implements ReportService {
         );
     }
 
+    private record ReportExportData(String title, String[] headers, List<String[]> rows) {}
+
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public byte[] exportReport(String type, String format, Map<String, String> params) {
+        ReportExportData data = buildReportExportData(type, params != null ? params : Map.of());
         if ("pdf".equalsIgnoreCase(format)) {
-            return exportToPdf(type, params);
-        } else {
-            return exportToExcel(type, params);
+            return exportToPdf(data);
         }
+        return exportToExcel(data);
     }
 
-    private byte[] exportToPdf(String type, Map<String, String> params) {
+    private ReportExportData buildReportExportData(String type, Map<String, String> params) {
+        LocalDate from = parseLocalDateParam(params.get("from"));
+        LocalDate to = parseLocalDateParam(params.get("to"));
+        LocalDate asOf = parseLocalDateParam(params.get("asOf"));
+        String compare = blankToNull(params.get("compare"));
+        Long costCenterId = parseLongParam(params.get("costCenterId"));
+        Long accountId = parseLongParam(params.get("accountId"));
+        Long itemId = parseLongParam(params.get("itemId"));
+        Long warehouseId = parseLongParam(params.get("warehouseId"));
+        Long ownerId = parseLongParam(params.get("ownerId"));
+        String groupBy = blankToNull(params.get("groupBy"));
+
+        String normalized = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
+        List<String[]> rows = new ArrayList<>();
+
+        return switch (normalized) {
+            case "profit-loss" -> {
+                ProfitLossReportDto pnl = getProfitLossReport(from, to, compare, costCenterId);
+                for (ReportLineDto l : pnl.revenueLines()) {
+                    rows.add(new String[]{"Revenue", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                for (ReportLineDto l : pnl.cogsLines()) {
+                    rows.add(new String[]{"COGS", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                for (ReportLineDto l : pnl.expenseLines()) {
+                    rows.add(new String[]{"Expense", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                rows.add(new String[]{"SUMMARY", "-", "Gross Profit", fmtAmt(pnl.grossProfit())});
+                rows.add(new String[]{"SUMMARY", "-", "Net Profit", fmtAmt(pnl.netProfit())});
+                yield new ReportExportData("Profit & Loss Statement",
+                        new String[]{"Section", "Account Code", "Account Name", "Amount"}, rows);
+            }
+            case "balance-sheet" -> {
+                BalanceSheetReportDto bs = getBalanceSheetReport(asOf, compare);
+                for (ReportLineDto l : bs.currentAssets()) {
+                    rows.add(new String[]{"Current Asset", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                for (ReportLineDto l : bs.nonCurrentAssets()) {
+                    rows.add(new String[]{"Non-Current Asset", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                for (ReportLineDto l : bs.currentLiabilities()) {
+                    rows.add(new String[]{"Current Liability", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                for (ReportLineDto l : bs.nonCurrentLiabilities()) {
+                    rows.add(new String[]{"Non-Current Liability", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                for (ReportLineDto l : bs.equityLines()) {
+                    rows.add(new String[]{"Equity", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
+                }
+                rows.add(new String[]{"Equity", "-", "Retained Earnings", fmtAmt(bs.retainedEarnings())});
+                rows.add(new String[]{"Equity", "-", "Net Income YTD", fmtAmt(bs.netIncomeYearToDate())});
+                rows.add(new String[]{"TOTAL", "-", "Total Assets", fmtAmt(bs.totalAssets())});
+                rows.add(new String[]{"TOTAL", "-", "Total Liabilities & Equity", fmtAmt(bs.totalLiabilitiesAndEquity())});
+                yield new ReportExportData("Balance Sheet",
+                        new String[]{"Category", "Account Code", "Account Name", "Amount"}, rows);
+            }
+            case "trial-balance" -> {
+                TrialBalanceReportDto tb = getTrialBalanceReport(asOf);
+                for (TrialBalanceLineDto l : tb.lines()) {
+                    rows.add(new String[]{l.accountCode(), l.accountName(), fmtAmt(l.debitBalance()), fmtAmt(l.creditBalance())});
+                }
+                rows.add(new String[]{"TOTAL", "-", fmtAmt(tb.totalDebit()), fmtAmt(tb.totalCredit())});
+                yield new ReportExportData("Trial Balance",
+                        new String[]{"Account Code", "Account Name", "Debit", "Credit"}, rows);
+            }
+            case "general-ledger" -> {
+                if (accountId == null) {
+                    throw new BusinessException("MISSING_PARAMETER", "accountId is required to export General Ledger.");
+                }
+                GeneralLedgerReportDto gl = getGeneralLedgerReport(accountId, from, to);
+                for (GeneralLedgerLineDto l : gl.lines()) {
+                    rows.add(new String[]{
+                            String.valueOf(l.date()),
+                            nullToDash(l.entryNo()),
+                            nullToDash(l.description()),
+                            fmtAmt(l.debit()),
+                            fmtAmt(l.credit()),
+                            fmtAmt(l.runningBalance())
+                    });
+                }
+                yield new ReportExportData("General Ledger - " + gl.accountCode() + " " + gl.accountName(),
+                        new String[]{"Date", "Entry No", "Description", "Debit", "Credit", "Balance"}, rows);
+            }
+            case "ar-ageing" -> {
+                ArAgeingReportDto ar = arAgeingService.getArAgeingReport(asOf);
+                for (var c : ar.customers()) {
+                    rows.add(new String[]{
+                            nullToDash(c.customerCode()), nullToDash(c.customerName()),
+                            fmtAmt(c.current()), fmtAmt(c.days1To30()), fmtAmt(c.days31To60()),
+                            fmtAmt(c.days61To90()), fmtAmt(c.daysOver90()), fmtAmt(c.totalOutstanding())
+                    });
+                }
+                yield new ReportExportData("AR Ageing Report",
+                        new String[]{"Code", "Customer", "Current", "1-30", "31-60", "61-90", "90+", "Total"}, rows);
+            }
+            case "ap-ageing" -> {
+                ApAgeingReportDto ap = apAgeingService.getApAgeingReport(asOf);
+                for (var v : ap.vendors()) {
+                    rows.add(new String[]{
+                            nullToDash(v.vendorCode()), nullToDash(v.vendorName()),
+                            fmtAmt(v.current()), fmtAmt(v.days1To30()), fmtAmt(v.days31To60()),
+                            fmtAmt(v.days61To90()), fmtAmt(v.daysOver90()), fmtAmt(v.totalOutstanding())
+                    });
+                }
+                yield new ReportExportData("AP Ageing Report",
+                        new String[]{"Code", "Vendor", "Current", "1-30", "31-60", "61-90", "90+", "Total"}, rows);
+            }
+            case "vat-return" -> {
+                VatReturnReportDto vat = getVatReturnReport(from, to);
+                rows.add(new String[]{"1a", "Standard Rated Sales", fmtAmt(vat.standardRatedSalesAmount()), fmtAmt(vat.standardRatedSalesVat())});
+                rows.add(new String[]{"2", "Zero-Rated Sales", fmtAmt(vat.zeroRatedSalesAmount()), "0.00"});
+                rows.add(new String[]{"3", "Exempt Sales", fmtAmt(vat.exemptSalesAmount()), "0.00"});
+                rows.add(new String[]{"9", "Standard Rated Purchases", fmtAmt(vat.standardRatedPurchasesAmount()), fmtAmt(vat.standardRatedPurchasesVat())});
+                rows.add(new String[]{"13", "Net VAT Due (Output - Input)", "-", fmtAmt(vat.netVatDue())});
+                yield new ReportExportData("UAE VAT Return Summary",
+                        new String[]{"Box", "Description", "Taxable Amount", "VAT Amount"}, rows);
+            }
+            case "stock-valuation" -> {
+                StockValuationReportDto sv = getStockValuationReport(asOf, warehouseId);
+                for (StockValuationLineDto l : sv.lines()) {
+                    rows.add(new String[]{
+                            nullToDash(l.sku()), nullToDash(l.itemName()), nullToDash(l.warehouseName()),
+                            fmtAmt(l.quantityOnHand()), fmtAmt(l.unitCost()), fmtAmt(l.totalValue())
+                    });
+                }
+                yield new ReportExportData("Stock Valuation Report",
+                        new String[]{"SKU", "Item Name", "Warehouse", "Qty On Hand", "Unit Cost", "Total Value"}, rows);
+            }
+            case "stock-movement" -> {
+                if (itemId == null) {
+                    throw new BusinessException("MISSING_PARAMETER", "itemId is required to export Stock Movement.");
+                }
+                StockMovementReportDto sm = getStockMovementReport(itemId, from, to);
+                for (StockMovementLineDto l : sm.movements()) {
+                    rows.add(new String[]{
+                            String.valueOf(l.date()), nullToDash(l.movementType()), nullToDash(l.warehouseName()),
+                            fmtAmt(l.qtyIn()), fmtAmt(l.qtyOut()), fmtAmt(l.runningBalance())
+                    });
+                }
+                yield new ReportExportData("Stock Movement - " + sm.sku() + " " + sm.itemName(),
+                        new String[]{"Date", "Type", "Warehouse", "In", "Out", "Balance"}, rows);
+            }
+            case "pipeline-forecast" -> {
+                PipelineForecastReportDto pf = getPipelineForecastReport(from, to, ownerId);
+                for (PipelineStageSummaryDto s : pf.stages()) {
+                    rows.add(new String[]{
+                            nullToDash(s.stageName()), String.valueOf(s.dealCount()),
+                            (s.probability() != null ? s.probability() + "%" : "-"),
+                            fmtAmt(s.totalValue()), fmtAmt(s.weightedValue())
+                    });
+                }
+                yield new ReportExportData("CRM Pipeline Forecast",
+                        new String[]{"Stage", "Deals", "Probability", "Total Value", "Weighted Value"}, rows);
+            }
+            case "expense-analysis" -> {
+                ExpenseAnalysisReportDto ea = getExpenseAnalysisReport(from, to, groupBy);
+                for (ExpenseAnalysisGroupDto g : ea.groups()) {
+                    rows.add(new String[]{
+                            nullToDash(g.groupName()), String.valueOf(g.claimCount()),
+                            fmtAmt(g.totalAmount()), fmtAmt(g.reimbursableAmount()),
+                            g.percentageOfTotal() != null ? String.format(Locale.ROOT, "%.2f%%", g.percentageOfTotal()) : "0.00%"
+                    });
+                }
+                yield new ReportExportData("Expense Analysis Report",
+                        new String[]{"Group", "Claims", "Total Amount", "Reimbursable", "Share %"}, rows);
+            }
+            default -> throw new BusinessException("UNSUPPORTED_REPORT_TYPE", "Unsupported report export type: " + type);
+        };
+    }
+
+    private byte[] exportToPdf(ReportExportData data) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4.rotate());
             PdfWriter.getInstance(document, out);
             document.open();
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.DARK_GRAY);
-            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, Color.DARK_GRAY);
+            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE);
             Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, Color.BLACK);
 
-            document.add(new Paragraph("FinLedger Financial Report: " + type.toUpperCase().replace('-', ' '), titleFont));
+            document.add(new Paragraph("FinLedger - " + data.title(), titleFont));
             document.add(new Paragraph("Generated on: " + LocalDate.now() + " | Tenant Scope: Current Organization\n\n"));
 
-            PdfPTable table = new PdfPTable(4);
+            PdfPTable table = new PdfPTable(data.headers().length);
             table.setWidthPercentage(100);
             table.setSpacingBefore(10f);
 
-            // Add Header
-            String[] headers = {"Account / Code", "Description", "Debit / Budget", "Credit / Amount"};
-            for (String h : headers) {
+            for (String h : data.headers()) {
                 PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
                 cell.setBackgroundColor(new Color(24, 76, 120));
                 cell.setPadding(6f);
                 table.addCell(cell);
             }
 
-            // Fill rows depending on report type
-            if ("profit-loss".equalsIgnoreCase(type)) {
-                ProfitLossReportDto pnl = getProfitLossReport(null, null, null, null);
-                for (ReportLineDto line : pnl.revenueLines()) {
-                    table.addCell(new Phrase(line.accountCode(), cellFont));
-                    table.addCell(new Phrase(line.accountName(), cellFont));
-                    table.addCell(new Phrase("-", cellFont));
-                    table.addCell(new Phrase(line.amount().toString(), cellFont));
-                }
-                for (ReportLineDto line : pnl.expenseLines()) {
-                    table.addCell(new Phrase(line.accountCode(), cellFont));
-                    table.addCell(new Phrase(line.accountName(), cellFont));
-                    table.addCell(new Phrase(line.amount().toString(), cellFont));
-                    table.addCell(new Phrase("-", cellFont));
-                }
-            } else if ("balance-sheet".equalsIgnoreCase(type)) {
-                BalanceSheetReportDto bs = getBalanceSheetReport(null, null);
-                for (ReportLineDto line : bs.currentAssets()) {
-                    table.addCell(new Phrase(line.accountCode(), cellFont));
-                    table.addCell(new Phrase(line.accountName(), cellFont));
-                    table.addCell(new Phrase(line.amount().toString(), cellFont));
-                    table.addCell(new Phrase("-", cellFont));
-                }
-                for (ReportLineDto line : bs.currentLiabilities()) {
-                    table.addCell(new Phrase(line.accountCode(), cellFont));
-                    table.addCell(new Phrase(line.accountName(), cellFont));
-                    table.addCell(new Phrase("-", cellFont));
-                    table.addCell(new Phrase(line.amount().toString(), cellFont));
-                }
-            } else {
-                TrialBalanceReportDto tb = getTrialBalanceReport(null);
-                for (TrialBalanceLineDto line : tb.lines()) {
-                    table.addCell(new Phrase(line.accountCode(), cellFont));
-                    table.addCell(new Phrase(line.accountName(), cellFont));
-                    table.addCell(new Phrase(line.debitBalance().toString(), cellFont));
-                    table.addCell(new Phrase(line.creditBalance().toString(), cellFont));
+            for (String[] row : data.rows()) {
+                for (String val : row) {
+                    table.addCell(new Phrase(val != null ? val : "-", cellFont));
                 }
             }
 
@@ -1061,7 +1237,7 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
-    private byte[] exportToExcel(String type, Map<String, String> params) {
+    private byte[] exportToExcel(ReportExportData data) {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Report");
 
@@ -1075,46 +1251,25 @@ public class ReportServiceImpl implements ReportService {
 
             Row titleRow = sheet.createRow(0);
             org.apache.poi.ss.usermodel.Cell titleCell = titleRow.createCell(0);
-            titleCell.setCellValue("FinLedger - " + type.toUpperCase().replace('-', ' ') + " Report");
+            titleCell.setCellValue("FinLedger - " + data.title());
             titleCell.setCellStyle(headerStyle);
 
             Row headerRow = sheet.createRow(2);
-            String[] headers = {"Account Code", "Account Name", "Debit / Inflow", "Credit / Outflow"};
-            for (int i = 0; i < headers.length; i++) {
+            for (int i = 0; i < data.headers().length; i++) {
                 org.apache.poi.ss.usermodel.Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
+                cell.setCellValue(data.headers()[i]);
                 cell.setCellStyle(headerStyle);
             }
 
             int rowIdx = 3;
-            if ("profit-loss".equalsIgnoreCase(type)) {
-                ProfitLossReportDto pnl = getProfitLossReport(null, null, null, null);
-                for (ReportLineDto line : pnl.revenueLines()) {
-                    Row r = sheet.createRow(rowIdx++);
-                    r.createCell(0).setCellValue(line.accountCode());
-                    r.createCell(1).setCellValue(line.accountName());
-                    r.createCell(2).setCellValue(0.0);
-                    r.createCell(3).setCellValue(line.amount().doubleValue());
-                }
-                for (ReportLineDto line : pnl.expenseLines()) {
-                    Row r = sheet.createRow(rowIdx++);
-                    r.createCell(0).setCellValue(line.accountCode());
-                    r.createCell(1).setCellValue(line.accountName());
-                    r.createCell(2).setCellValue(line.amount().doubleValue());
-                    r.createCell(3).setCellValue(0.0);
-                }
-            } else {
-                TrialBalanceReportDto tb = getTrialBalanceReport(null);
-                for (TrialBalanceLineDto line : tb.lines()) {
-                    Row r = sheet.createRow(rowIdx++);
-                    r.createCell(0).setCellValue(line.accountCode());
-                    r.createCell(1).setCellValue(line.accountName());
-                    r.createCell(2).setCellValue(line.debitBalance().doubleValue());
-                    r.createCell(3).setCellValue(line.creditBalance().doubleValue());
+            for (String[] rowValues : data.rows()) {
+                Row r = sheet.createRow(rowIdx++);
+                for (int i = 0; i < rowValues.length; i++) {
+                    r.createCell(i).setCellValue(rowValues[i] != null ? rowValues[i] : "-");
                 }
             }
 
-            for (int i = 0; i < headers.length; i++) {
+            for (int i = 0; i < data.headers().length; i++) {
                 sheet.autoSizeColumn(i);
             }
 
@@ -1123,6 +1278,36 @@ public class ReportServiceImpl implements ReportService {
         } catch (Exception e) {
             throw new BusinessException("EXPORT_ERROR", "Failed to generate Excel report: " + e.getMessage());
         }
+    }
+
+    private LocalDate parseLocalDateParam(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return LocalDate.parse(raw.trim());
+        } catch (Exception e) {
+            throw new BusinessException("INVALID_DATE", "Invalid date filter parameter: " + raw);
+        }
+    }
+
+    private Long parseLongParam(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return Long.valueOf(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new BusinessException("INVALID_PARAMETER", "Invalid numeric filter parameter: " + raw);
+        }
+    }
+
+    private String blankToNull(String raw) {
+        return (raw == null || raw.isBlank()) ? null : raw.trim();
+    }
+
+    private String fmtAmt(BigDecimal value) {
+        return value != null ? value.setScale(2, RoundingMode.HALF_UP).toPlainString() : "0.00";
+    }
+
+    private String nullToDash(String raw) {
+        return (raw == null || raw.isBlank()) ? "-" : raw;
     }
 
     private ReportLineDto createReportLine(Account a, BigDecimal amount, BigDecimal compareAmount) {

@@ -212,13 +212,22 @@ public class BillServiceImpl implements BillService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('BILL_VIEW')")
     public PageResponse<BillDto> getBills(Long vendorId, Pageable pageable) {
+        return getBills(vendorId, null, null, null, null, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('BILL_VIEW')")
+    public PageResponse<BillDto> getBills(
+            Long vendorId,
+            BillStatus status,
+            LocalDate from,
+            LocalDate to,
+            String q,
+            Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
-        Page<Bill> page;
-        if (vendorId != null) {
-            page = billRepository.findByCompanyIdAndVendorId(companyId, vendorId, pageable);
-        } else {
-            page = billRepository.findByCompanyId(companyId, pageable);
-        }
+        String searchTerm = (q != null && !q.isBlank()) ? q.trim() : null;
+        Page<Bill> page = billRepository.searchBills(companyId, vendorId, status, from, to, searchTerm, pageable);
 
         return PageResponse.from(page.map(b -> {
             Vendor vendor = vendorRepository.findByCompanyIdAndId(companyId, b.getVendorId()).orElse(null);

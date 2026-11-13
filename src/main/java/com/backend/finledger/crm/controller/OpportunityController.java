@@ -12,6 +12,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,11 +26,13 @@ public class OpportunityController {
     }
 
     @GetMapping("/board")
+    @PreAuthorize("hasAuthority('OPPORTUNITY_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<OpportunityBoardDto> getOpportunityBoard() {
         return ResponseEntity.ok(opportunityService.getOpportunityBoard());
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('OPPORTUNITY_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<PageResponse<OpportunityDto>> getOpportunities(
             @RequestParam(required = false) Long stageId,
             @RequestParam(required = false) Long customerId,
@@ -40,21 +43,25 @@ public class OpportunityController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('OPPORTUNITY_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<OpportunityDto> getOpportunityById(@PathVariable Long id) {
         return ResponseEntity.ok(opportunityService.getOpportunityById(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('OPPORTUNITY_CREATE')")
     public ResponseEntity<OpportunityDto> createOpportunity(@Valid @RequestBody OpportunityRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(opportunityService.createOpportunity(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('OPPORTUNITY_EDIT')")
     public ResponseEntity<OpportunityDto> updateOpportunity(@PathVariable Long id, @Valid @RequestBody OpportunityRequest request) {
         return ResponseEntity.ok(opportunityService.updateOpportunity(id, request));
     }
 
     @PatchMapping("/{id}/stage")
+    @PreAuthorize("hasAuthority('OPPORTUNITY_EDIT')")
     public ResponseEntity<OpportunityDto> updateOpportunityStage(@PathVariable Long id, @Valid @RequestBody OpportunityStageRequest request) {
         return ResponseEntity.ok(opportunityService.updateOpportunityStage(id, request));
     }

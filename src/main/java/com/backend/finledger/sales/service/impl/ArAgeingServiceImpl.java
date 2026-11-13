@@ -32,7 +32,7 @@ public class ArAgeingServiceImpl implements ArAgeingService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('REPORT_VIEW')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasAuthority('INVOICE_VIEW')")
     public ArAgeingReportDto getArAgeingReport(LocalDate asOfDate) {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate asOf = asOfDate != null ? asOfDate : LocalDate.now();

@@ -9,6 +9,7 @@ import com.backend.finledger.banking.service.BankAccountService;
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('BANK_RECONCILE','COMPANY_VIEW','SETTINGS_VIEW','SETTINGS_EDIT','RECEIPT_CREATE','RECEIPT_VIEW','PAYMENT_CREATE','PAYMENT_VIEW','EXPENSE_CREATE','EXPENSE_VIEW','EXPENSE_REIMBURSE')")
     public List<BankAccountDto> getActiveBankAccounts() {
         Long companyId = CurrentUser.getCompanyId();
         return bankAccountRepository.findByCompanyIdAndIsActiveTrue(companyId).stream()
@@ -38,6 +40,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('BANK_RECONCILE','COMPANY_VIEW','SETTINGS_VIEW','SETTINGS_EDIT','RECEIPT_CREATE','RECEIPT_VIEW','PAYMENT_CREATE','PAYMENT_VIEW','EXPENSE_CREATE','EXPENSE_VIEW','EXPENSE_REIMBURSE')")
     public List<BankAccountDto> getAllBankAccounts() {
         Long companyId = CurrentUser.getCompanyId();
         return bankAccountRepository.findByCompanyId(companyId).stream()
@@ -47,6 +50,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('BANK_RECONCILE','COMPANY_VIEW','SETTINGS_VIEW','SETTINGS_EDIT','RECEIPT_CREATE','RECEIPT_VIEW','PAYMENT_CREATE','PAYMENT_VIEW','EXPENSE_CREATE','EXPENSE_VIEW','EXPENSE_REIMBURSE')")
     public BankAccountDto getBankAccountById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         BankAccount account = bankAccountRepository.findByCompanyIdAndId(companyId, id)
@@ -56,6 +60,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT')")
     public BankAccountDto createBankAccount(BankAccountRequest request) {
         Long companyId = CurrentUser.getCompanyId();
 
@@ -87,6 +92,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT')")
     public BankAccountDto updateBankAccount(Long id, BankAccountRequest request) {
         Long companyId = CurrentUser.getCompanyId();
         BankAccount account = bankAccountRepository.findByCompanyIdAndId(companyId, id)
@@ -119,6 +125,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('BANK_RECONCILE') or hasAuthority('SETTINGS_EDIT')")
     public void deleteBankAccount(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         BankAccount account = bankAccountRepository.findByCompanyIdAndId(companyId, id)

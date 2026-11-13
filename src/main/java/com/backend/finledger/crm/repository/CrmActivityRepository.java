@@ -7,11 +7,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface CrmActivityRepository extends JpaRepository<CrmActivity, Long> {
+
+    @Query("SELECT COUNT(a) FROM CrmActivity a WHERE a.companyId = :companyId " +
+           "AND a.completedAt IS NULL AND a.dueAt IS NOT NULL AND a.dueAt < :now")
+    long countOverdueActivities(@Param("companyId") Long companyId, @Param("now") Instant now);
 
     Optional<CrmActivity> findByCompanyIdAndId(Long companyId, Long id);
 

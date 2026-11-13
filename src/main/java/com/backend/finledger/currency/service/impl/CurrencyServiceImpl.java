@@ -35,6 +35,7 @@ public class CurrencyServiceImpl implements CurrencyService {
 
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','CURRENCY_VIEW','CURRENCY_EDIT','INVOICE_CREATE','BILL_CREATE','QUOTATION_CREATE','JOURNAL_CREATE','EXPENSE_CREATE')")
     public List<CurrencyDto> getAllCurrencies() {
         return currencyRepository.findAll().stream()
                 .map(currencyMapper::toDto)
@@ -43,7 +44,7 @@ public class CurrencyServiceImpl implements CurrencyService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('SETTINGS_EDIT') or hasAuthority('CURRENCY_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('SETTINGS_VIEW','SETTINGS_EDIT','CURRENCY_VIEW','CURRENCY_EDIT','INVOICE_CREATE','BILL_CREATE','QUOTATION_CREATE','JOURNAL_CREATE','EXPENSE_CREATE')")
     public List<ExchangeRateDto> getExchangeRates() {
         Long companyId = CurrentUser.getCompanyId();
         return exchangeRateRepository.findByCompanyIdOrderByRateDateDesc(companyId).stream()

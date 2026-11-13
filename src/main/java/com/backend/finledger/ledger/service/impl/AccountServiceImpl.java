@@ -32,7 +32,7 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('ACCOUNT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','INVOICE_CREATE','BILL_CREATE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public PageResponse<AccountDto> getAccounts(AccountType type, Boolean active, String q, Pageable pageable) {
         Long companyId = CurrentUser.getCompanyId();
         return PageResponse.from(accountRepository.searchAccounts(companyId, type, active, q, pageable)
@@ -41,7 +41,7 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('ACCOUNT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','INVOICE_CREATE','BILL_CREATE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public List<AccountNodeDto> getAccountsTree() {
         Long companyId = CurrentUser.getCompanyId();
         List<Account> allAccounts = accountRepository.findByCompanyIdOrderByCodeAsc(companyId);
@@ -70,7 +70,7 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAuthority('ACCOUNT_VIEW') or isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('ACCOUNT_VIEW','JOURNAL_VIEW','JOURNAL_CREATE','INVOICE_CREATE','BILL_CREATE','SETTINGS_VIEW','SETTINGS_EDIT')")
     public AccountDto getAccountById(Long id) {
         Long companyId = CurrentUser.getCompanyId();
         Account account = accountRepository.findByCompanyIdAndId(companyId, id)

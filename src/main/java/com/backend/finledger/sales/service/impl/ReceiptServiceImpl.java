@@ -161,6 +161,7 @@ public class ReceiptServiceImpl implements ReceiptService {
         String receiptNo = numberSeriesService.generateNextNumber(companyId, DocType.RECEIPT);
         receipt.setReceiptNo(receiptNo);
         receipt.setStatus(ReceiptStatus.POSTED);
+        receipt = receiptRepository.save(receipt);
 
         List<JournalLineRequest> journalLines = List.of(
                 new JournalLineRequest(
@@ -185,7 +186,7 @@ public class ReceiptServiceImpl implements ReceiptService {
 
         SourceDocumentPostingRequest postingRequest = new SourceDocumentPostingRequest(
                 JournalSourceType.RECEIPT,
-                null,
+                receipt.getId(),
                 receipt.getReceiptDate(),
                 receipt.getReceiptNo(),
                 "Customer Receipt " + receipt.getReceiptNo() + " - " + customer.getName(),

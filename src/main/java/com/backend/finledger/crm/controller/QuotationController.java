@@ -15,6 +15,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -30,6 +31,7 @@ public class QuotationController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('QUOTATION_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<PageResponse<QuotationDto>> getQuotations(
             @RequestParam(required = false) Long customerId,
             @RequestParam(required = false) Long opportunityId,
@@ -42,36 +44,43 @@ public class QuotationController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('QUOTATION_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<QuotationDto> getQuotationById(@PathVariable Long id) {
         return ResponseEntity.ok(quotationService.getQuotationById(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('QUOTATION_CREATE')")
     public ResponseEntity<QuotationDto> createQuotation(@Valid @RequestBody QuotationRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(quotationService.createQuotation(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('QUOTATION_CREATE')")
     public ResponseEntity<QuotationDto> updateQuotation(@PathVariable Long id, @Valid @RequestBody QuotationRequest request) {
         return ResponseEntity.ok(quotationService.updateQuotation(id, request));
     }
 
     @PostMapping("/{id}/send")
+    @PreAuthorize("hasAuthority('QUOTATION_SEND') or hasAuthority('QUOTATION_CREATE')")
     public ResponseEntity<QuotationDto> sendQuotation(@PathVariable Long id) {
         return ResponseEntity.ok(quotationService.sendQuotation(id));
     }
 
     @PostMapping("/{id}/accept")
+    @PreAuthorize("hasAuthority('QUOTATION_SEND') or hasAuthority('QUOTATION_CREATE')")
     public ResponseEntity<QuotationDto> acceptQuotation(@PathVariable Long id) {
         return ResponseEntity.ok(quotationService.acceptQuotation(id));
     }
 
     @PostMapping("/{id}/convert-to-invoice")
+    @PreAuthorize("hasAuthority('QUOTATION_CONVERT')")
     public ResponseEntity<ConvertToInvoiceResponse> convertToInvoice(@PathVariable Long id) {
         return ResponseEntity.ok(quotationService.convertToInvoice(id));
     }
 
     @GetMapping("/{id}/pdf")
+    @PreAuthorize("hasAuthority('QUOTATION_VIEW') or hasAuthority('CRM_VIEW_ALL')")
     public ResponseEntity<byte[]> getQuotationPdf(@PathVariable Long id) {
         byte[] pdf = quotationService.generateQuotationPdf(id);
         QuotationDto quotation = quotationService.getQuotationById(id);

@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,6 +24,7 @@ public class AttachmentController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyAuthority('EXPENSE_CREATE','EXPENSE_APPROVE','INVOICE_CREATE','BILL_CREATE','JOURNAL_CREATE','CUSTOMER_EDIT','VENDOR_EDIT','LEAD_EDIT','OPPORTUNITY_EDIT','SETTINGS_EDIT')")
     public ResponseEntity<AttachmentDto> uploadAttachment(
             @RequestParam("file") MultipartFile file,
             @RequestParam("entityType") String entityType,
@@ -32,6 +34,7 @@ public class AttachmentController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','EXPENSE_REIMBURSE','INVOICE_VIEW','INVOICE_CREATE','BILL_VIEW','BILL_CREATE','JOURNAL_VIEW','CUSTOMER_VIEW','VENDOR_VIEW','LEAD_VIEW','OPPORTUNITY_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<Resource> downloadAttachment(@PathVariable Long id) {
         AttachmentDto metadata = attachmentService.getAttachmentById(id);
         Resource resource = attachmentService.downloadAttachment(id);
@@ -50,11 +53,13 @@ public class AttachmentController {
     }
 
     @GetMapping("/{id}/metadata")
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','EXPENSE_REIMBURSE','INVOICE_VIEW','INVOICE_CREATE','BILL_VIEW','BILL_CREATE','JOURNAL_VIEW','CUSTOMER_VIEW','VENDOR_VIEW','LEAD_VIEW','OPPORTUNITY_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<AttachmentDto> getAttachmentMetadata(@PathVariable Long id) {
         return ResponseEntity.ok(attachmentService.getAttachmentById(id));
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('EXPENSE_VIEW','EXPENSE_CREATE','EXPENSE_APPROVE','EXPENSE_REIMBURSE','INVOICE_VIEW','INVOICE_CREATE','BILL_VIEW','BILL_CREATE','JOURNAL_VIEW','CUSTOMER_VIEW','VENDOR_VIEW','LEAD_VIEW','OPPORTUNITY_VIEW','SETTINGS_EDIT')")
     public ResponseEntity<List<AttachmentDto>> getAttachments(
             @RequestParam("entityType") String entityType,
             @RequestParam("entityId") Long entityId) {
@@ -62,6 +67,7 @@ public class AttachmentController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('EXPENSE_CREATE','EXPENSE_APPROVE','INVOICE_CREATE','BILL_CREATE','JOURNAL_CREATE','CUSTOMER_EDIT','VENDOR_EDIT','LEAD_EDIT','OPPORTUNITY_EDIT','SETTINGS_EDIT')")
     public ResponseEntity<Void> deleteAttachment(@PathVariable Long id) {
         attachmentService.deleteAttachment(id);
         return ResponseEntity.noContent().build();

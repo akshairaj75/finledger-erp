@@ -11,5 +11,6 @@ public interface FiscalYearPeriodService {
     FiscalYearDto createFiscalYear(CreateFiscalYearRequest request);
     FiscalPeriodDto closePeriod(Long periodId);
     FiscalPeriodDto lockPeriod(Long periodId);
+    FiscalYearDto closeFiscalYear(Long fiscalYearId, Long retainedEarningsAccountId);
 }
 

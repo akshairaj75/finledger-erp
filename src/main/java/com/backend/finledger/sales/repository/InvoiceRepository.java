@@ -1,6 +1,7 @@
 package com.backend.finledger.sales.repository;
 
 import com.backend.finledger.sales.entity.Invoice;
+import com.backend.finledger.sales.entity.InvoiceDocType;
 import com.backend.finledger.sales.entity.InvoiceStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -27,6 +28,26 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     Page<Invoice> findByCompanyId(Long companyId, Pageable pageable);
 
     Page<Invoice> findByCompanyIdAndCustomerId(Long companyId, Long customerId, Pageable pageable);
+
+    @Query("SELECT i FROM Invoice i WHERE i.companyId = :companyId " +
+           "AND (:customerId IS NULL OR i.customerId = :customerId) " +
+           "AND (:status IS NULL OR i.status = :status) " +
+           "AND (:docType IS NULL OR i.docType = :docType) " +
+           "AND (:fromDate IS NULL OR i.invoiceDate >= :fromDate) " +
+           "AND (:toDate IS NULL OR i.invoiceDate <= :toDate) " +
+           "AND (:q IS NULL OR LOWER(i.invoiceNo) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "     OR EXISTS (SELECT 1 FROM Customer c WHERE c.id = i.customerId " +
+           "                AND (LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "                     OR LOWER(c.code) LIKE LOWER(CONCAT('%', :q, '%')))))")
+    Page<Invoice> searchInvoices(
+            @Param("companyId") Long companyId,
+            @Param("customerId") Long customerId,
+            @Param("status") InvoiceStatus status,
+            @Param("docType") InvoiceDocType docType,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("q") String q,
+            Pageable pageable);
 
     List<Invoice> findByCompanyIdAndCustomerIdAndStatusInAndBalanceDueGreaterThan(
             Long companyId, Long customerId, Collection<InvoiceStatus> statuses, BigDecimal minBalance);
