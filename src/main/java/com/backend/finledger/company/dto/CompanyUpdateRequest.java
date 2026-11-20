@@ -21,16 +21,23 @@ public record CompanyUpdateRequest(
     String address,
     String email,
     String phone,
-    String logoPath,
     Boolean isActive,
-    Boolean allowNegativeStock
+    Boolean allowNegativeStock,
+    Boolean removeLogo
 ) {
     public CompanyUpdateRequest(
             String legalName, String trn, String countryCode, String baseCurrency,
             Byte fiscalYearStartMonth, String address, String email, String phone,
-            String logoPath, Boolean isActive) {
+            Boolean isActive) {
         this(legalName, trn, countryCode, baseCurrency, fiscalYearStartMonth,
-                address, email, phone, logoPath, isActive, null);
+                address, email, phone, isActive, false, false);
+    }
+
+    public CompanyUpdateRequest(
+            String legalName, String trn, String countryCode, String baseCurrency,
+            Byte fiscalYearStartMonth, String address, String email, String phone,
+            Boolean isActive, Boolean allowNegativeStock) {
+        this(legalName, trn, countryCode, baseCurrency, fiscalYearStartMonth,
+                address, email, phone, isActive, allowNegativeStock, false);
     }
 }
-
