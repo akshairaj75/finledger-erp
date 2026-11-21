@@ -2,6 +2,7 @@ package com.backend.finledger.config;
 
 import com.backend.finledger.security.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -29,9 +30,16 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final boolean swaggerEnabled;
+    private final String allowedOrigins;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
+    public SecurityConfig(
+            JwtAuthFilter jwtAuthFilter,
+            @Value("${finledger.swagger.enabled:true}") boolean swaggerEnabled,
+            @Value("${finledger.cors.allowed-origins:http://localhost:4200}") String allowedOrigins) {
         this.jwtAuthFilter = jwtAuthFilter;
+        this.swaggerEnabled = swaggerEnabled;
+        this.allowedOrigins = allowedOrigins;
     }
 
     @Bean
@@ -60,22 +68,26 @@ public class SecurityConfig {
                     .policyDirectives("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:* ws://localhost:*")
                 )
                 .permissionsPolicy(permissions -> permissions
-                    .policy("camera=(), microphone=(), geolocation=(), payment=()")
+                    .policy("camera=(self), microphone=(), geolocation=(), payment=()")
                 )
             )
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers(
+            .authorizeHttpRequests(auth -> {
+                if (swaggerEnabled) {
+                    auth.requestMatchers(
+                        "/swagger-ui/**",
+                        "/v3/api-docs/**",
+                        "/swagger-ui.html"
+                    ).permitAll();
+                }
+                auth.requestMatchers(
                     "/api/v1/auth/login",
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
-                    "/swagger-ui/**",
-                    "/v3/api-docs/**",
-                    "/swagger-ui.html",
                     "/actuator/health",
                     "/error"
                 ).permitAll()
-                .anyRequest().authenticated()
-            )
+                .anyRequest().authenticated();
+            })
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -84,13 +96,11 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of(
-            "http://localhost:[*]",
-            "https://localhost:[*]",
-            "http://127.0.0.1:[*]",
-            "https://127.0.0.1:[*]",
-            "http://192.168.1.201:[*]"
-        ));
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        config.setAllowedOriginPatterns(origins);
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
         config.setAllowedHeaders(Arrays.asList(
             "Authorization",

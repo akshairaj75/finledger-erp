@@ -43,5 +43,6 @@ public abstract class BaseIntegrationTest {
             registry.add("spring.flyway.user", MYSQL_CONTAINER::getUsername);
             registry.add("spring.flyway.password", MYSQL_CONTAINER::getPassword);
         }
+        registry.add("jwt.secret", () -> "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970");
     }
 }

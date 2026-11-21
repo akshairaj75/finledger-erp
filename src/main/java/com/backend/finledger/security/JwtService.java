@@ -25,17 +25,17 @@ public class JwtService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     public JwtService(
-            @Value("${jwt.secret:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}") String secret,
+            @Value("${jwt.secret}") String secret,
             @Value("${jwt.access-token-expiration-minutes:15}") long accessExpirationMinutes,
             @Value("${jwt.refresh-token-expiration-days:7}") long refreshExpirationDays) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("JWT secret key must be configured via 'jwt.secret' / JWT_SECRET environment variable");
+        }
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < 32) {
-            byte[] padded = new byte[32];
-            System.arraycopy(keyBytes, 0, padded, 0, Math.min(keyBytes.length, 32));
-            this.key = Keys.hmacShaKeyFor(padded);
-        } else {
-            this.key = Keys.hmacShaKeyFor(keyBytes);
+            throw new IllegalStateException("JWT secret key must be at least 32 bytes (256 bits) for HS256 algorithm");
         }
+        this.key = Keys.hmacShaKeyFor(keyBytes);
         this.accessTokenDuration = Duration.ofMinutes(accessExpirationMinutes);
         this.refreshTokenDuration = Duration.ofDays(refreshExpirationDays);
     }
