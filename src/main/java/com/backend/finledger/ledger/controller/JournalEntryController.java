@@ -52,6 +52,14 @@ public class JournalEntryController {
         return ResponseEntity.status(HttpStatus.CREATED).body(postingService.createJournalEntry(request));
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('JOURNAL_CREATE') or hasAuthority('JOURNAL_POST')")
+    public ResponseEntity<JournalEntryDto> updateJournalEntry(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateJournalEntryRequest request) {
+        return ResponseEntity.ok(postingService.updateDraftJournalEntry(id, request));
+    }
+
     @PostMapping("/{id}/post")
     @PreAuthorize("hasAuthority('JOURNAL_POST')")
     public ResponseEntity<JournalEntryDto> postJournalEntry(@PathVariable Long id) {

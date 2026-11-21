@@ -18,5 +18,11 @@ public interface CostingService {
      * Retrieves the current average cost for the item in the specified warehouse.
      */
     BigDecimal getCurrentAverageCost(Long itemId, Long warehouseId);
+
+    /**
+     * Calculates the issue unit cost for the given quantity using FIFO consumption
+     * of oldest inbound stock movements for that (itemId, warehouseId).
+     */
+    BigDecimal calculateIssueUnitCost(Long companyId, Long itemId, Long warehouseId, BigDecimal issueQty);
 }
 

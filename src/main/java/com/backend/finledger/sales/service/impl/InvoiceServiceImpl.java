@@ -61,8 +61,14 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+import com.backend.finledger.common.mail.MailService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @Service
 public class InvoiceServiceImpl implements InvoiceService {
+
+    private static final Logger log = LoggerFactory.getLogger(InvoiceServiceImpl.class);
 
     private final InvoiceRepository invoiceRepository;
     private final CustomerRepository customerRepository;
@@ -76,6 +82,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final ItemRepository itemRepository;
     private final WarehouseRepository warehouseRepository;
     private final StockService stockService;
+    private final MailService mailService;
 
     public InvoiceServiceImpl(InvoiceRepository invoiceRepository,
                               CustomerRepository customerRepository,
@@ -88,7 +95,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                               SalesMapper salesMapper,
                               ItemRepository itemRepository,
                               WarehouseRepository warehouseRepository,
-                              StockService stockService) {
+                              StockService stockService,
+                              MailService mailService) {
         this.invoiceRepository = invoiceRepository;
         this.customerRepository = customerRepository;
         this.taxRateRepository = taxRateRepository;
@@ -101,6 +109,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         this.itemRepository = itemRepository;
         this.warehouseRepository = warehouseRepository;
         this.stockService = stockService;
+        this.mailService = mailService;
     }
 
     @Override
@@ -445,6 +454,25 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setJournalEntryId(postedJournal.id());
 
         Invoice saved = invoiceRepository.save(invoice);
+
+        if (customer.getEmail() != null && !customer.getEmail().isBlank()) {
+            try {
+                Company company = companyRepository.findById(companyId).orElse(null);
+                String companyName = company != null ? company.getLegalName() : "FinLedger";
+                byte[] pdfBytes = generateInvoicePdf(saved.getId());
+                String docLabel = (saved.getDocType() == InvoiceDocType.INVOICE) ? "Tax Invoice" : "Credit Note";
+                String filename = saved.getInvoiceNo() + ".pdf";
+                String subject = docLabel + " #" + saved.getInvoiceNo() + " from " + companyName;
+                String bodyHtml = "<p>Dear " + customer.getName() + ",</p>" +
+                        "<p>Please find attached " + docLabel.toLowerCase() + " <b>#" + saved.getInvoiceNo() + "</b> for <b>" +
+                        saved.getTotal() + " " + saved.getCurrencyCode() + "</b>.</p>" +
+                        "<p>Thank you for your business.<br/>" + companyName + "</p>";
+                mailService.sendEmailWithAttachment(customer.getEmail(), subject, bodyHtml, filename, pdfBytes);
+            } catch (Exception e) {
+                log.warn("Failed to dispatch invoice email for {}: {}", saved.getInvoiceNo(), e.getMessage());
+            }
+        }
+
         return mapToDtoWithCustomer(saved, customer);
     }
 

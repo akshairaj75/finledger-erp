@@ -639,4 +639,59 @@ class InventoryAndCostingTest {
         assertEquals(0, new BigDecimal("20.00").compareTo(suggestion.suggestedOrderQty()));
         assertEquals(0, new BigDecimal("2400.00").compareTo(suggestion.estimatedCost())); // 20 * 120.00 = 2400.00
     }
+
+    @Test
+    @Transactional
+    @DisplayName("10. FIFO Costing: Issue stock consumes oldest inbound movement layers and calculates accurate COGS")
+    void testFifoCostingAcrossTwoReceiptsAndSale() {
+        WarehouseDto wh = createTestWarehouse("WH-FIFO", "FIFO Warehouse", false);
+
+        // Create item with CostingMethod.FIFO
+        ItemDto fifoItem = itemService.createItem(new ItemRequest(
+                "SKU-FIFO-01", null, "FIFO Test Item", null, ItemType.INVENTORY, "PCS",
+                CostingMethod.FIFO, new BigDecimal("50.00"), new BigDecimal("10.00"),
+                BigDecimal.ZERO, BigDecimal.ZERO, salesRevenueAccountId, cogsAccountId,
+                inventoryAssetAccountId, taxRateZeroId, null, true
+        ));
+
+        // 1. First receipt: 10 units @ 10.00
+        stockService.receiveStock(
+                bsbCompanyId, fifoItem.id(), wh.id(), new BigDecimal("10"), new BigDecimal("10.00"),
+                MovementType.PURCHASE, StockSourceType.BILL, 101L, 1L, null
+        );
+
+        // 2. Second receipt: 10 units @ 20.00
+        stockService.receiveStock(
+                bsbCompanyId, fifoItem.id(), wh.id(), new BigDecimal("10"), new BigDecimal("20.00"),
+                MovementType.PURCHASE, StockSourceType.BILL, 102L, 1L, null
+        );
+
+        // Verify stock balance: 20 units total on hand
+        StockBalanceDto balBefore = stockService.getStockBalance(fifoItem.id(), wh.id());
+        assertEquals(0, new BigDecimal("20").compareTo(balBefore.qtyOnHand()));
+
+        // 3. First issue: 5 units (should fully consume from Layer 1 @ 10.00)
+        StockMovement issue1 = stockService.issueStock(
+                bsbCompanyId, fifoItem.id(), wh.id(), new BigDecimal("5"),
+                MovementType.SALE, StockSourceType.INVOICE, 201L, 1L, null
+        );
+        assertEquals(0, new BigDecimal("10.0000").compareTo(issue1.getUnitCost()));
+        assertEquals(0, new BigDecimal("50.00").compareTo(issue1.getTotalCost()));
+
+        // 4. Second issue: 10 units (should consume remaining 5 from Layer 1 @ 10.00 + 5 from Layer 2 @ 20.00)
+        // Total cost = (5 * 10.00) + (5 * 20.00) = 50.00 + 100.00 = 150.00
+        // Unit cost = 150.00 / 10 = 15.0000
+        StockMovement issue2 = stockService.issueStock(
+                bsbCompanyId, fifoItem.id(), wh.id(), new BigDecimal("10"),
+                MovementType.SALE, StockSourceType.INVOICE, 202L, 1L, null
+        );
+        assertEquals(0, new BigDecimal("15.0000").compareTo(issue2.getUnitCost()));
+        assertEquals(0, new BigDecimal("150.00").compareTo(issue2.getTotalCost()));
+
+        // 5. Remaining stock: 5 units on hand (all in Layer 2 @ 20.00 = 100.00 value)
+        StockBalanceDto balAfter = stockService.getStockBalance(fifoItem.id(), wh.id());
+        assertEquals(0, new BigDecimal("5").compareTo(balAfter.qtyOnHand()));
+        assertEquals(0, new BigDecimal("100.00").compareTo(balAfter.stockValue()));
+        assertEquals(0, new BigDecimal("20.0000").compareTo(balAfter.avgCost()));
+    }
 }

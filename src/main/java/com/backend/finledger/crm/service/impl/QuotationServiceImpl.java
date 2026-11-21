@@ -64,9 +64,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.backend.finledger.common.mail.MailService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @Service
 @Transactional
 public class QuotationServiceImpl implements QuotationService {
+
+    private static final Logger log = LoggerFactory.getLogger(QuotationServiceImpl.class);
 
     private final QuotationRepository quotationRepository;
     private final QuotationLineRepository quotationLineRepository;
@@ -83,6 +89,7 @@ public class QuotationServiceImpl implements QuotationService {
     private final TaxCalculator taxCalculator;
     private final InvoiceService invoiceService;
     private final InvoiceRepository invoiceRepository;
+    private final MailService mailService;
 
     public QuotationServiceImpl(QuotationRepository quotationRepository,
                                 QuotationLineRepository quotationLineRepository,
@@ -98,7 +105,8 @@ public class QuotationServiceImpl implements QuotationService {
                                 NumberSeriesService numberSeriesService,
                                 TaxCalculator taxCalculator,
                                 InvoiceService invoiceService,
-                                InvoiceRepository invoiceRepository) {
+                                InvoiceRepository invoiceRepository,
+                                MailService mailService) {
         this.quotationRepository = quotationRepository;
         this.quotationLineRepository = quotationLineRepository;
         this.opportunityRepository = opportunityRepository;
@@ -114,6 +122,7 @@ public class QuotationServiceImpl implements QuotationService {
         this.taxCalculator = taxCalculator;
         this.invoiceService = invoiceService;
         this.invoiceRepository = invoiceRepository;
+        this.mailService = mailService;
     }
 
     @Override
@@ -199,6 +208,41 @@ public class QuotationServiceImpl implements QuotationService {
             quotation.setStatus(QuotationStatus.SENT);
             quotation = quotationRepository.save(quotation);
         }
+
+        String recipientEmail = null;
+        String recipientName = "Customer";
+        if (quotation.getCustomerId() != null) {
+            Customer cust = customerRepository.findByCompanyIdAndId(companyId, quotation.getCustomerId()).orElse(null);
+            if (cust != null) {
+                recipientEmail = cust.getEmail();
+                recipientName = cust.getName();
+            }
+        } else if (quotation.getLeadId() != null) {
+            Lead lead = leadRepository.findByCompanyIdAndId(companyId, quotation.getLeadId()).orElse(null);
+            if (lead != null) {
+                recipientEmail = lead.getEmail();
+                recipientName = lead.getCompanyName() != null ? lead.getCompanyName() : lead.getContactName();
+            }
+        }
+
+        if (recipientEmail != null && !recipientEmail.isBlank()) {
+            try {
+                Company company = companyRepository.findById(companyId).orElse(null);
+                String companyName = company != null ? company.getLegalName() : "FinLedger";
+                byte[] pdfBytes = generateQuotationPdf(quotation.getId());
+                String filename = quotation.getQuotationNo() + ".pdf";
+                String subject = "Quotation #" + quotation.getQuotationNo() + " from " + companyName;
+                String bodyHtml = "<p>Dear " + recipientName + ",</p>" +
+                        "<p>Please find attached quotation <b>#" + quotation.getQuotationNo() + "</b> for <b>" +
+                        quotation.getTotal() + " " + quotation.getCurrencyCode() + "</b>.</p>" +
+                        "<p>Valid until: " + quotation.getValidUntil() + "</p>" +
+                        "<p>Thank you.<br/>" + companyName + "</p>";
+                mailService.sendEmailWithAttachment(recipientEmail, subject, bodyHtml, filename, pdfBytes);
+            } catch (Exception e) {
+                log.warn("Failed to dispatch quotation email for {}: {}", quotation.getQuotationNo(), e.getMessage());
+            }
+        }
+
         return mapToDto(quotation);
     }
 

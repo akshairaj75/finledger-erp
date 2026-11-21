@@ -30,5 +30,13 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
             @Param("to") LocalDate to);
 
     List<StockMovement> findByCompanyIdAndSourceTypeAndSourceId(Long companyId, StockSourceType sourceType, Long sourceId);
+
+    @Query("SELECT sm FROM StockMovement sm WHERE sm.companyId = :companyId AND sm.itemId = :itemId " +
+           "AND sm.warehouseId = :warehouseId " +
+           "ORDER BY sm.movementDate ASC, sm.id ASC")
+    List<StockMovement> findMovementsByItemAndWarehouse(
+            @Param("companyId") Long companyId,
+            @Param("itemId") Long itemId,
+            @Param("warehouseId") Long warehouseId);
 }
 

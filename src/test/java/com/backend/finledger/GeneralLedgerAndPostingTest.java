@@ -639,5 +639,95 @@ class GeneralLedgerAndPostingTest {
         assertNotNull(acmeTb);
         assertTrue(acmeTb.lines().stream().noneMatch(l -> l.accountId().equals(cashAccountId)));
     }
+
+    @Test
+    @Transactional
+    @DisplayName("18. Draft Journal Edit: Edit draft entry succeeds and recalculates debits/credits")
+    void testUpdateDraftJournalEntry_Success() {
+        // 1. Create initial draft entry
+        JournalEntryDto draft = postingService.createJournalEntry(new CreateJournalEntryRequest(
+                openPeriod.getStartDate(),
+                "DRAFT-REF-1",
+                "Original Draft Narration",
+                JournalSourceType.MANUAL,
+                null,
+                "AED",
+                BigDecimal.ONE,
+                List.of(
+                        new JournalLineRequest(cashAccountId, null, "Initial Cash", new BigDecimal("100.00"), BigDecimal.ZERO, null, null),
+                        new JournalLineRequest(salesAccountId, null, "Initial Sales", BigDecimal.ZERO, new BigDecimal("100.00"), null, null)
+                ),
+                false
+        ));
+        assertNotNull(draft.id());
+        assertEquals(JournalStatus.DRAFT, draft.status());
+        assertEquals("Original Draft Narration", draft.narration());
+        assertEquals(0, new BigDecimal("100.00").compareTo(draft.totalDebit()));
+
+        // 2. Update the draft entry
+        JournalEntryDto updated = postingService.updateDraftJournalEntry(draft.id(), new CreateJournalEntryRequest(
+                openPeriod.getStartDate(),
+                "DRAFT-REF-UPDATED",
+                "Updated Draft Narration",
+                JournalSourceType.MANUAL,
+                null,
+                "AED",
+                BigDecimal.ONE,
+                List.of(
+                        new JournalLineRequest(cashAccountId, null, "Updated Cash", new BigDecimal("250.00"), BigDecimal.ZERO, null, null),
+                        new JournalLineRequest(salesAccountId, null, "Updated Sales", BigDecimal.ZERO, new BigDecimal("250.00"), null, null)
+                ),
+                false
+        ));
+
+        assertEquals(draft.id(), updated.id());
+        assertEquals(JournalStatus.DRAFT, updated.status());
+        assertEquals("DRAFT-REF-UPDATED", updated.reference());
+        assertEquals("Updated Draft Narration", updated.narration());
+        assertEquals(0, new BigDecimal("250.00").compareTo(updated.totalDebit()));
+        assertEquals(0, new BigDecimal("250.00").compareTo(updated.totalCredit()));
+        assertEquals(2, updated.lines().size());
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("19. Draft Journal Edit: Rejects update of POSTED journal with HTTP 422 (CANNOT_EDIT_POSTED)")
+    void testUpdateDraftJournalEntry_RejectPosted() {
+        // 1. Create and post an entry immediately
+        JournalEntryDto posted = postingService.createJournalEntry(new CreateJournalEntryRequest(
+                openPeriod.getStartDate(),
+                "POSTED-REF",
+                "Already Posted Narration",
+                JournalSourceType.MANUAL,
+                null,
+                "AED",
+                BigDecimal.ONE,
+                List.of(
+                        new JournalLineRequest(cashAccountId, null, "Cash", new BigDecimal("300.00"), BigDecimal.ZERO, null, null),
+                        new JournalLineRequest(salesAccountId, null, "Sales", BigDecimal.ZERO, new BigDecimal("300.00"), null, null)
+                ),
+                true
+        ));
+        assertEquals(JournalStatus.POSTED, posted.status());
+
+        // 2. Attempting to update posted entry must throw BusinessException CANNOT_EDIT_POSTED
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                postingService.updateDraftJournalEntry(posted.id(), new CreateJournalEntryRequest(
+                        openPeriod.getStartDate(),
+                        "ATTEMPT-UPDATE",
+                        "Trying to update",
+                        JournalSourceType.MANUAL,
+                        null,
+                        "AED",
+                        BigDecimal.ONE,
+                        List.of(
+                                new JournalLineRequest(cashAccountId, null, "Cash", new BigDecimal("400.00"), BigDecimal.ZERO, null, null),
+                                new JournalLineRequest(salesAccountId, null, "Sales", BigDecimal.ZERO, new BigDecimal("400.00"), null, null)
+                        ),
+                        false
+                )));
+
+        assertEquals("CANNOT_EDIT_POSTED", ex.getCode());
+    }
 }
 

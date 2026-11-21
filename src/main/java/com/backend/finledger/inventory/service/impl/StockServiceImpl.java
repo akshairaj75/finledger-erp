@@ -165,11 +165,30 @@ public class StockServiceImpl implements StockService {
                     ". Available on hand: " + currentQty + ", requested: " + quantity);
         }
 
-        BigDecimal newQty = currentQty.subtract(quantity);
+        Item item = itemRepository.findById(itemId).orElse(null);
         BigDecimal currentAvgCost = balance.getAvgCost();
+        BigDecimal unitCost;
+        if (item != null && item.getCostingMethod() == CostingMethod.FIFO) {
+            unitCost = costingService.calculateIssueUnitCost(companyId, itemId, warehouseId, quantity);
+        } else {
+            unitCost = currentAvgCost;
+        }
 
+        BigDecimal newQty = currentQty.subtract(quantity);
         balance.setQtyOnHand(newQty);
-        balance.setStockValue(newQty.multiply(currentAvgCost).setScale(2, RoundingMode.HALF_UP));
+        if (item != null && item.getCostingMethod() == CostingMethod.FIFO) {
+            BigDecimal totalCostVal = quantity.multiply(unitCost).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal newValue = balance.getStockValue().subtract(totalCostVal);
+            if (newValue.compareTo(BigDecimal.ZERO) < 0 || newQty.compareTo(BigDecimal.ZERO) <= 0) {
+                newValue = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            }
+            balance.setStockValue(newValue);
+            if (newQty.compareTo(BigDecimal.ZERO) > 0) {
+                balance.setAvgCost(newValue.divide(newQty, 4, RoundingMode.HALF_UP));
+            }
+        } else {
+            balance.setStockValue(newQty.multiply(currentAvgCost).setScale(2, RoundingMode.HALF_UP));
+        }
         stockBalanceRepository.save(balance);
 
         // Append to immutable stock_movements ledger (negative qty indicates stock decrement)
@@ -180,8 +199,8 @@ public class StockServiceImpl implements StockService {
         movement.setMovementDate(LocalDate.now());
         movement.setMovementType(movementType);
         movement.setQuantity(quantity.negate());
-        movement.setUnitCost(currentAvgCost);
-        movement.setTotalCost(quantity.multiply(currentAvgCost).setScale(2, RoundingMode.HALF_UP));
+        movement.setUnitCost(unitCost);
+        movement.setTotalCost(quantity.multiply(unitCost).setScale(2, RoundingMode.HALF_UP));
         movement.setBalanceQty(newQty);
         movement.setSourceType(sourceType);
         movement.setSourceId(sourceId);

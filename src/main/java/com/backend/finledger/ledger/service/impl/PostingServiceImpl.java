@@ -155,6 +155,85 @@ public class PostingServiceImpl implements PostingService {
         return ledgerMapper.toEntryDto(saved);
     }
 
+    @Override
+    @Transactional
+    @PreAuthorize("hasAuthority('JOURNAL_CREATE') or hasAuthority('JOURNAL_POST')")
+    public JournalEntryDto updateDraftJournalEntry(Long id, CreateJournalEntryRequest request) {
+        Long companyId = CurrentUser.getCompanyId();
+
+        JournalEntry entry = journalEntryRepository.findByCompanyIdAndId(companyId, id)
+                .orElseThrow(() -> new BusinessException("JOURNAL_NOT_FOUND", "Journal entry not found with id: " + id));
+
+        if (entry.getStatus() != JournalStatus.DRAFT) {
+            throw new BusinessException("CANNOT_EDIT_POSTED", "Only draft journal entries can be edited. Current status: " + entry.getStatus());
+        }
+
+        Company company = companyRepository.findById(companyId)
+                .orElseThrow(() -> new BusinessException("COMPANY_NOT_FOUND", "Company not found for id: " + companyId));
+
+        String currencyCode = request.currencyCode() != null ? request.currencyCode() : company.getBaseCurrency();
+        BigDecimal exchangeRate = (request.exchangeRate() != null && request.exchangeRate().compareTo(BigDecimal.ZERO) > 0)
+                ? request.exchangeRate() : BigDecimal.ONE;
+
+        // Verify fiscal period
+        FiscalPeriod period = fiscalPeriodRepository.findPeriodByDate(companyId, request.entryDate())
+                .orElseThrow(() -> new BusinessException("NO_FISCAL_PERIOD", "No fiscal period found for entry date: " + request.entryDate()));
+
+        entry.setEntryDate(request.entryDate());
+        entry.setFiscalPeriodId(period.getId());
+        entry.setReference(request.reference());
+        entry.setNarration(request.narration());
+        if (request.sourceType() != null) {
+            entry.setSourceType(request.sourceType());
+        }
+        if (request.sourceId() != null) {
+            entry.setSourceId(request.sourceId());
+        }
+        entry.setCurrencyCode(currencyCode);
+        entry.setExchangeRate(exchangeRate);
+
+        // Replace lines
+        entry.getLines().clear();
+        short lineNo = 1;
+        BigDecimal sumDebit = BigDecimal.ZERO;
+        BigDecimal sumCredit = BigDecimal.ZERO;
+
+        for (JournalLineRequest lineReq : request.lines()) {
+            BigDecimal debit = lineReq.debit() != null ? lineReq.debit().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+            BigDecimal credit = lineReq.credit() != null ? lineReq.credit().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+
+            JournalLine line = new JournalLine();
+            line.setLineNo(lineNo++);
+            line.setAccountId(lineReq.accountId());
+            line.setCostCenterId(lineReq.costCenterId());
+            line.setDescription(lineReq.description());
+            line.setDebit(debit);
+            line.setCredit(credit);
+            line.setBaseDebit(debit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
+            line.setBaseCredit(credit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
+            line.setPartyType(lineReq.partyType());
+            line.setPartyId(lineReq.partyId());
+
+            entry.addLine(line);
+            sumDebit = sumDebit.add(debit);
+            sumCredit = sumCredit.add(credit);
+        }
+
+        entry.setTotalDebit(sumDebit);
+        entry.setTotalCredit(sumCredit);
+
+        boolean postImmediately = Boolean.TRUE.equals(request.postImmediately());
+        if (postImmediately) {
+            validatePostingRules(entry, period);
+            entry.setStatus(JournalStatus.POSTED);
+            entry.setPostedAt(LocalDateTime.now());
+            entry.setPostedBy(CurrentUser.getUserId());
+        }
+
+        JournalEntry saved = journalEntryRepository.save(entry);
+        return ledgerMapper.toEntryDto(saved);
+    }
+
     /**
      * Validates and posts an existing draft journal entry.
      */

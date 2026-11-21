@@ -234,8 +234,11 @@ class SalesAndArTest {
     @Transactional
     @DisplayName("1. Customer CRUD and duplicate code validation")
     void testCustomerCrud() {
+        customerRepository.findByCompanyIdAndCode(bsbCompanyId, "CUST-CRUD-001")
+                .ifPresent(customerRepository::delete);
+
         CustomerRequest req = new CustomerRequest(
-                "CUST-001",
+                "CUST-CRUD-001",
                 "Al Futtaim Motors",
                 "100200300400003",
                 "info@alfuttaim.ae",
@@ -253,7 +256,7 @@ class SalesAndArTest {
 
         CustomerDto created = customerService.createCustomer(req);
         assertNotNull(created.id());
-        assertEquals("CUST-001", created.code());
+        assertEquals("CUST-CRUD-001", created.code());
         assertEquals("Al Futtaim Motors", created.name());
 
         // Duplicate code within same company should throw DUPLICATE_CUSTOMER_CODE
@@ -262,7 +265,7 @@ class SalesAndArTest {
 
         // Update customer
         CustomerRequest updateReq = new CustomerRequest(
-                "CUST-001",
+                "CUST-CRUD-001",
                 "Al Futtaim Motors LLC",
                 "100200300400003",
                 "billing@alfuttaim.ae",

@@ -20,6 +20,8 @@ public interface PostingService {
 
     JournalEntryDto createJournalEntry(CreateJournalEntryRequest request);
 
+    JournalEntryDto updateDraftJournalEntry(Long id, CreateJournalEntryRequest request);
+
     JournalEntryDto postJournalEntry(Long id);
 
     void validatePostingRules(JournalEntry entry, FiscalPeriod period);
