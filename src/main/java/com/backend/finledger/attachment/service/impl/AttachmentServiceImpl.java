@@ -147,7 +147,7 @@ public class AttachmentServiceImpl implements AttachmentService {
     }
 
     private void assertExpenseAttachmentAccess(Expense expense) {
-        if (CurrentUser.hasAuthority("EXPENSE_APPROVE") || CurrentUser.hasAuthority("EXPENSE_REIMBURSE")) {
+        if (CurrentUser.hasAnyAuthority("EXPENSE_APPROVE", "EXPENSE_REIMBURSE", "REPORT_VIEW", "SETTINGS_EDIT")) {
             return;
         }
         Long currentUserId = CurrentUser.getUserId();
