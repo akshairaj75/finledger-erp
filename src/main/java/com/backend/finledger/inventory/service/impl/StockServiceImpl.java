@@ -1,6 +1,7 @@
 package com.backend.finledger.inventory.service.impl;
 
 import com.backend.finledger.common.BusinessException;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.inventory.dto.StockBalanceDto;
@@ -216,30 +217,49 @@ public class StockServiceImpl implements StockService {
     @Override
     @Transactional(readOnly = true)
     public StockBalanceDto getStockBalance(Long itemId, Long warehouseId) {
-        StockBalance balance = stockBalanceRepository.findByItemIdAndWarehouseId(itemId, warehouseId)
+        Long companyId = CurrentUser.getCompanyId();
+        Item item = requireCompanyItem(companyId, itemId);
+        Warehouse wh = requireCompanyWarehouse(companyId, warehouseId);
+        StockBalance balance = stockBalanceRepository.findByCompanyIdAndItemIdAndWarehouseId(companyId, itemId, warehouseId)
                 .orElse(new StockBalance(itemId, warehouseId));
-        return toDto(balance);
+        return toDto(balance, item, wh);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<StockBalanceDto> getStockBalancesByItem(Long itemId) {
-        return stockBalanceRepository.findByItemId(itemId).stream()
-                .map(this::toDto)
+        Long companyId = CurrentUser.getCompanyId();
+        Item item = requireCompanyItem(companyId, itemId);
+        return stockBalanceRepository.findByCompanyIdAndItemId(companyId, itemId).stream()
+                .map(sb -> toDto(sb, item, warehouseRepository.findByCompanyIdAndId(companyId, sb.getWarehouseId()).orElse(null)))
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<StockBalanceDto> getStockBalancesByWarehouse(Long warehouseId) {
-        return stockBalanceRepository.findByWarehouseId(warehouseId).stream()
-                .map(this::toDto)
+        Long companyId = CurrentUser.getCompanyId();
+        Warehouse wh = requireCompanyWarehouse(companyId, warehouseId);
+        return stockBalanceRepository.findByCompanyIdAndWarehouseId(companyId, warehouseId).stream()
+                .map(sb -> toDto(sb, itemRepository.findByCompanyIdAndId(companyId, sb.getItemId()).orElse(null), wh))
                 .toList();
     }
 
-    private StockBalanceDto toDto(StockBalance balance) {
-        Item item = itemRepository.findById(balance.getItemId()).orElse(null);
-        Warehouse wh = warehouseRepository.findById(balance.getWarehouseId()).orElse(null);
+    private Item requireCompanyItem(Long companyId, Long itemId) {
+        return itemRepository.findByCompanyIdAndId(companyId, itemId)
+                .orElseThrow(() -> itemRepository.existsById(itemId)
+                        ? new ForbiddenException("ACCESS_DENIED", "Item does not belong to current company: " + itemId)
+                        : new BusinessException("ITEM_NOT_FOUND", "Item not found with id: " + itemId));
+    }
+
+    private Warehouse requireCompanyWarehouse(Long companyId, Long warehouseId) {
+        return warehouseRepository.findByCompanyIdAndId(companyId, warehouseId)
+                .orElseThrow(() -> warehouseRepository.existsById(warehouseId)
+                        ? new ForbiddenException("ACCESS_DENIED", "Warehouse does not belong to current company: " + warehouseId)
+                        : new BusinessException("WAREHOUSE_NOT_FOUND", "Warehouse not found with id: " + warehouseId));
+    }
+
+    private StockBalanceDto toDto(StockBalance balance, Item item, Warehouse wh) {
 
         String itemSku = item != null ? item.getSku() : "";
         String itemName = item != null ? item.getName() : "";

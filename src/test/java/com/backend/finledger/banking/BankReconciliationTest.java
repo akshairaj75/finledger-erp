@@ -2,9 +2,12 @@ package com.backend.finledger.banking;
 
 import com.backend.finledger.banking.dto.BankReconciliationDto;
 import com.backend.finledger.banking.dto.BankReconciliationRequest;
+import com.backend.finledger.banking.dto.ReconciliationMatchRequest;
 import com.backend.finledger.banking.entity.AccountKind;
 import com.backend.finledger.banking.entity.BankAccount;
 import com.backend.finledger.banking.entity.BankReconciliation;
+import com.backend.finledger.banking.entity.BankStatement;
+import com.backend.finledger.banking.entity.BankStatementLine;
 import com.backend.finledger.banking.entity.ReconciliationStatus;
 import com.backend.finledger.banking.repository.BankAccountRepository;
 import com.backend.finledger.banking.repository.BankReconciliationRepository;
@@ -12,6 +15,7 @@ import com.backend.finledger.banking.repository.BankStatementLineRepository;
 import com.backend.finledger.banking.repository.BankStatementRepository;
 import com.backend.finledger.banking.service.impl.BankReconciliationServiceImpl;
 import com.backend.finledger.common.BusinessException;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.ledger.entity.Account;
 import com.backend.finledger.ledger.entity.AccountType;
 import com.backend.finledger.ledger.entity.NormalBalance;
@@ -128,7 +132,7 @@ class BankReconciliationTest {
         recon.setDifference(BigDecimal.valueOf(500));
         recon.setStatus(ReconciliationStatus.IN_PROGRESS);
 
-        when(reconciliationRepository.findById(5L)).thenReturn(Optional.of(recon));
+        when(reconciliationRepository.findByCompanyIdAndId(1L, 5L)).thenReturn(Optional.of(recon));
         when(bankAccountRepository.findByCompanyIdAndId(1L, 10L)).thenReturn(Optional.of(testBankAccount));
         when(accountRepository.findByCompanyIdAndId(1L, 101L)).thenReturn(Optional.of(testGlAccount));
         when(journalLineRepository.findAllPostedLinesForAccount(1L, 101L, recon.getStatementDate())).thenReturn(Collections.emptyList());
@@ -150,7 +154,7 @@ class BankReconciliationTest {
         recon.setDifference(BigDecimal.ZERO);
         recon.setStatus(ReconciliationStatus.IN_PROGRESS);
 
-        when(reconciliationRepository.findById(5L)).thenReturn(Optional.of(recon));
+        when(reconciliationRepository.findByCompanyIdAndId(1L, 5L)).thenReturn(Optional.of(recon));
         when(bankAccountRepository.findByCompanyIdAndId(1L, 10L)).thenReturn(Optional.of(testBankAccount));
         when(accountRepository.findByCompanyIdAndId(1L, 101L)).thenReturn(Optional.of(testGlAccount));
         when(journalLineRepository.findAllPostedLinesForAccount(1L, 101L, recon.getStatementDate())).thenReturn(Collections.emptyList());
@@ -163,6 +167,36 @@ class BankReconciliationTest {
         assertEquals(ReconciliationStatus.COMPLETED, result.status());
         assertNotNull(result.completedAt());
         assertEquals(0, result.difference().compareTo(BigDecimal.ZERO));
+    }
+
+    @Test
+    @DisplayName("Should block cross-tenant reconciliation access and mismatched bank statement line matching")
+    void testCrossTenantAndBankAccountIsolationOnMatch() {
+        when(reconciliationRepository.findByCompanyIdAndId(1L, 999L)).thenReturn(Optional.empty());
+        when(reconciliationRepository.existsById(999L)).thenReturn(true);
+
+        assertThrows(ForbiddenException.class, () -> reconciliationService.getReconciliationById(999L));
+
+        BankReconciliation recon = new BankReconciliation();
+        recon.setId(5L);
+        recon.setBankAccountId(10L);
+        recon.setStatementDate(LocalDate.of(2026, 10, 31));
+        recon.setStatus(ReconciliationStatus.IN_PROGRESS);
+
+        BankStatement otherBankStmt = new BankStatement();
+        otherBankStmt.setId(77L);
+        otherBankStmt.setBankAccountId(99L); // Different bank account
+
+        BankStatementLine foreignLine = new BankStatementLine();
+        foreignLine.setId(88L);
+        foreignLine.setBankStatement(otherBankStmt);
+
+        when(reconciliationRepository.findByCompanyIdAndId(1L, 5L)).thenReturn(Optional.of(recon));
+        when(bankAccountRepository.findByCompanyIdAndId(1L, 10L)).thenReturn(Optional.of(testBankAccount));
+        when(statementLineRepository.findByCompanyIdAndId(1L, 88L)).thenReturn(Optional.of(foreignLine));
+
+        assertThrows(ForbiddenException.class,
+                () -> reconciliationService.match(5L, new ReconciliationMatchRequest(88L, 200L)));
     }
 }
 

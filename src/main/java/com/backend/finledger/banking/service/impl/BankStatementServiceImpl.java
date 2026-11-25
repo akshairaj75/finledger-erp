@@ -11,6 +11,7 @@ import com.backend.finledger.banking.repository.BankStatementLineRepository;
 import com.backend.finledger.banking.repository.BankStatementRepository;
 import com.backend.finledger.banking.service.BankStatementService;
 import com.backend.finledger.common.BusinessException;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.security.CurrentUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -125,7 +126,7 @@ public class BankStatementServiceImpl implements BankStatementService {
         bankAccountRepository.findByCompanyIdAndId(companyId, bankAccountId)
                 .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND", "Bank account not found: " + bankAccountId));
 
-        return bankStatementRepository.findByBankAccountIdOrderByStatementDateDesc(bankAccountId).stream()
+        return bankStatementRepository.findByCompanyIdAndBankAccountIdOrderByStatementDateDesc(companyId, bankAccountId).stream()
                 .map(s -> {
                     List<BankStatementLine> lines = bankStatementLineRepository.findByBankStatementIdOrderByTxnDateAsc(s.getId());
                     return toDto(s, lines);
@@ -136,12 +137,11 @@ public class BankStatementServiceImpl implements BankStatementService {
     @Override
     @Transactional(readOnly = true)
     public BankStatementDto getStatementById(Long id) {
-        BankStatement statement = bankStatementRepository.findById(id)
-                .orElseThrow(() -> new BusinessException("STATEMENT_NOT_FOUND", "Bank statement not found: " + id));
-
         Long companyId = CurrentUser.getCompanyId();
-        bankAccountRepository.findByCompanyIdAndId(companyId, statement.getBankAccountId())
-                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND", "Unauthorized access to statement"));
+        BankStatement statement = bankStatementRepository.findByCompanyIdAndId(companyId, id)
+                .orElseThrow(() -> bankStatementRepository.existsById(id)
+                        ? new ForbiddenException("ACCESS_DENIED", "Unauthorized access to bank statement: " + id)
+                        : new BusinessException("STATEMENT_NOT_FOUND", "Bank statement not found: " + id));
 
         List<BankStatementLine> lines = bankStatementLineRepository.findByBankStatementIdOrderByTxnDateAsc(statement.getId());
         return toDto(statement, lines);

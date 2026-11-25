@@ -34,6 +34,20 @@ public record PaymentRequest(
         BigDecimal amount,
 
         @Valid
-        List<PaymentAllocationRequest> allocations
-) {}
+        List<PaymentAllocationRequest> allocations,
+
+        BigDecimal exchangeRate
+) {
+    public PaymentRequest(
+            Long vendorId,
+            LocalDate paymentDate,
+            Long bankAccountId,
+            PaymentMethod paymentMethod,
+            String reference,
+            String currencyCode,
+            BigDecimal amount,
+            List<PaymentAllocationRequest> allocations) {
+        this(vendorId, paymentDate, bankAccountId, paymentMethod, reference, currencyCode, amount, allocations, null);
+    }
+}
 

@@ -308,12 +308,16 @@ public class BillServiceImpl implements BillService {
                                         .orElse(1L);
                             }
 
+                            BigDecimal effectiveRate = (bill.getExchangeRate() != null && bill.getExchangeRate().compareTo(BigDecimal.ZERO) > 0)
+                                    ? bill.getExchangeRate() : BigDecimal.ONE;
+                            BigDecimal baseUnitCost = line.getUnitPrice().multiply(effectiveRate).setScale(4, RoundingMode.HALF_UP);
+
                             stockService.receiveStock(
                                     companyId,
                                     item.getId(),
                                     whId,
                                     line.getQuantity(),
-                                    line.getUnitPrice(),
+                                    baseUnitCost,
                                     MovementType.PURCHASE,
                                     StockSourceType.BILL,
                                     bill.getId(),

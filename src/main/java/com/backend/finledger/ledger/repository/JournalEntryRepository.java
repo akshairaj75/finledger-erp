@@ -22,6 +22,8 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
 
     boolean existsByCompanyIdAndReversalOfId(Long companyId, Long reversalOfId);
 
+    boolean existsByCompanyIdAndSourceTypeAndStatus(Long companyId, JournalSourceType sourceType, JournalStatus status);
+
     @Query("SELECT j FROM JournalEntry j WHERE j.companyId = :companyId " +
            "AND (:from IS NULL OR j.entryDate >= :from) " +
            "AND (:to IS NULL OR j.entryDate <= :to) " +

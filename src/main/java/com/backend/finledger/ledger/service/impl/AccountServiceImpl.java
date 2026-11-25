@@ -7,10 +7,14 @@ import com.backend.finledger.ledger.dto.AccountNodeDto;
 import com.backend.finledger.ledger.dto.AccountRequest;
 import com.backend.finledger.ledger.entity.Account;
 import com.backend.finledger.ledger.entity.AccountType;
+import com.backend.finledger.ledger.entity.JournalSourceType;
+import com.backend.finledger.ledger.entity.JournalStatus;
 import com.backend.finledger.ledger.mapper.AccountMapper;
 import com.backend.finledger.ledger.repository.AccountRepository;
+import com.backend.finledger.ledger.repository.JournalEntryRepository;
 import com.backend.finledger.ledger.service.AccountService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -19,15 +23,32 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.*;
 
+/**
+ * Chart of Accounts service.
+ *
+ * <p><b>Opening Balance Policy:</b> {@code accounts.openingBalance} stores static pre-ledger opening balances
+ * that {@code ReportServiceImpl} and {@code BankReconciliationServiceImpl} add directly to posted journal movements.
+ * To prevent double-counting or out-of-balance ledgers, direct account opening balances cannot be set on group
+ * accounts or while posted {@link JournalSourceType#OPENING} journal entries exist for the company.
+ */
 @Service
 public class AccountServiceImpl implements AccountService {
 
     private final AccountRepository accountRepository;
     private final AccountMapper accountMapper;
+    private final JournalEntryRepository journalEntryRepository;
 
     public AccountServiceImpl(AccountRepository accountRepository, AccountMapper accountMapper) {
+        this(accountRepository, accountMapper, null);
+    }
+
+    @Autowired
+    public AccountServiceImpl(AccountRepository accountRepository,
+                              AccountMapper accountMapper,
+                              JournalEntryRepository journalEntryRepository) {
         this.accountRepository = accountRepository;
         this.accountMapper = accountMapper;
+        this.journalEntryRepository = journalEntryRepository;
     }
 
     @Override
@@ -97,6 +118,10 @@ public class AccountServiceImpl implements AccountService {
             }
         }
 
+        BigDecimal openingBalance = request.openingBalance() != null ? request.openingBalance() : BigDecimal.ZERO;
+        boolean isGroup = request.isGroup() != null ? request.isGroup() : false;
+        validateOpeningBalancePolicy(companyId, isGroup, openingBalance, BigDecimal.ZERO);
+
         Account account = new Account(
                 companyId,
                 request.code().trim(),
@@ -104,11 +129,11 @@ public class AccountServiceImpl implements AccountService {
                 request.accountType(),
                 request.subType(),
                 request.parentId(),
-                request.isGroup() != null ? request.isGroup() : false,
+                isGroup,
                 request.normalBalance()
         );
         account.setCurrencyCode(request.currencyCode());
-        account.setOpeningBalance(request.openingBalance() != null ? request.openingBalance() : BigDecimal.ZERO);
+        account.setOpeningBalance(openingBalance);
         account.setIsSystem(false);
         account.setIsActive(request.isActive() != null ? request.isActive() : true);
 
@@ -123,6 +148,11 @@ public class AccountServiceImpl implements AccountService {
         Long companyId = CurrentUser.getCompanyId();
         Account account = accountRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Account not found with id: " + id));
+
+        boolean effectiveIsGroup = request.isGroup() != null ? request.isGroup() : Boolean.TRUE.equals(account.getIsGroup());
+        BigDecimal existingOpening = account.getOpeningBalance() != null ? account.getOpeningBalance() : BigDecimal.ZERO;
+        BigDecimal requestedOpening = request.openingBalance() != null ? request.openingBalance() : existingOpening;
+        validateOpeningBalancePolicy(companyId, effectiveIsGroup, requestedOpening, existingOpening);
 
         account.setName(request.name().trim());
         account.setSubType(request.subType());
@@ -141,6 +171,22 @@ public class AccountServiceImpl implements AccountService {
 
         Account saved = accountRepository.save(account);
         return accountMapper.toDto(saved);
+    }
+
+    private void validateOpeningBalancePolicy(Long companyId, boolean isGroup, BigDecimal requestedOpening, BigDecimal existingOpening) {
+        if (requestedOpening == null || requestedOpening.compareTo(BigDecimal.ZERO) == 0) {
+            return;
+        }
+        if (isGroup) {
+            throw new BusinessException("GROUP_ACCOUNT_OPENING_BALANCE",
+                    "Opening balance cannot be assigned to a group account");
+        }
+        boolean openingChanged = existingOpening == null || requestedOpening.compareTo(existingOpening) != 0;
+        if (openingChanged && journalEntryRepository != null
+                && journalEntryRepository.existsByCompanyIdAndSourceTypeAndStatus(companyId, JournalSourceType.OPENING, JournalStatus.POSTED)) {
+            throw new BusinessException("OPENING_JOURNAL_EXISTS",
+                    "Cannot modify account openingBalance while posted OPENING journal entries exist; post an OPENING journal entry instead to keep ledgers balanced.");
+        }
     }
 
     @Override

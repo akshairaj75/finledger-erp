@@ -124,8 +124,14 @@ public class PostingServiceImpl implements PostingService {
             line.setDescription(lineReq.description());
             line.setDebit(debit);
             line.setCredit(credit);
-            line.setBaseDebit(debit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
-            line.setBaseCredit(credit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
+            BigDecimal baseDebit = lineReq.baseDebit() != null
+                    ? lineReq.baseDebit().setScale(2, RoundingMode.HALF_UP)
+                    : debit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal baseCredit = lineReq.baseCredit() != null
+                    ? lineReq.baseCredit().setScale(2, RoundingMode.HALF_UP)
+                    : credit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+            line.setBaseDebit(baseDebit);
+            line.setBaseCredit(baseCredit);
             line.setPartyType(lineReq.partyType());
             line.setPartyId(lineReq.partyId());
 
@@ -209,8 +215,14 @@ public class PostingServiceImpl implements PostingService {
             line.setDescription(lineReq.description());
             line.setDebit(debit);
             line.setCredit(credit);
-            line.setBaseDebit(debit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
-            line.setBaseCredit(credit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
+            BigDecimal baseDebit = lineReq.baseDebit() != null
+                    ? lineReq.baseDebit().setScale(2, RoundingMode.HALF_UP)
+                    : debit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal baseCredit = lineReq.baseCredit() != null
+                    ? lineReq.baseCredit().setScale(2, RoundingMode.HALF_UP)
+                    : credit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+            line.setBaseDebit(baseDebit);
+            line.setBaseCredit(baseCredit);
             line.setPartyType(lineReq.partyType());
             line.setPartyId(lineReq.partyId());
 
@@ -283,19 +295,24 @@ public class PostingServiceImpl implements PostingService {
 
         BigDecimal totalDebit = BigDecimal.ZERO;
         BigDecimal totalCredit = BigDecimal.ZERO;
+        BigDecimal totalBaseDebit = BigDecimal.ZERO;
+        BigDecimal totalBaseCredit = BigDecimal.ZERO;
 
         for (JournalLine line : entry.getLines()) {
             BigDecimal debit = line.getDebit() != null ? line.getDebit() : BigDecimal.ZERO;
             BigDecimal credit = line.getCredit() != null ? line.getCredit() : BigDecimal.ZERO;
+            BigDecimal baseDebit = line.getBaseDebit() != null ? line.getBaseDebit() : BigDecimal.ZERO;
+            BigDecimal baseCredit = line.getBaseCredit() != null ? line.getBaseCredit() : BigDecimal.ZERO;
 
             // 3. Line amounts must be non-negative
-            if (debit.compareTo(BigDecimal.ZERO) < 0 || credit.compareTo(BigDecimal.ZERO) < 0) {
+            if (debit.compareTo(BigDecimal.ZERO) < 0 || credit.compareTo(BigDecimal.ZERO) < 0
+                    || baseDebit.compareTo(BigDecimal.ZERO) < 0 || baseCredit.compareTo(BigDecimal.ZERO) < 0) {
                 throw new BusinessException("INVALID_LINE_AMOUNTS", "Line amounts cannot be negative");
             }
 
             // 4. Must have either debit or credit, but not both
-            boolean hasDebit = debit.compareTo(BigDecimal.ZERO) > 0;
-            boolean hasCredit = credit.compareTo(BigDecimal.ZERO) > 0;
+            boolean hasDebit = debit.compareTo(BigDecimal.ZERO) > 0 || baseDebit.compareTo(BigDecimal.ZERO) > 0;
+            boolean hasCredit = credit.compareTo(BigDecimal.ZERO) > 0 || baseCredit.compareTo(BigDecimal.ZERO) > 0;
             if ((hasDebit && hasCredit) || (!hasDebit && !hasCredit)) {
                 throw new BusinessException("INVALID_LINE_AMOUNTS",
                         "Each line must have either a debit or a credit amount, but not both (Line " + line.getLineNo() + ")");
@@ -325,12 +342,18 @@ public class PostingServiceImpl implements PostingService {
 
             totalDebit = totalDebit.add(debit);
             totalCredit = totalCredit.add(credit);
+            totalBaseDebit = totalBaseDebit.add(baseDebit);
+            totalBaseCredit = totalBaseCredit.add(baseCredit);
         }
 
-        // 7. Balanced double-entry check (total_debit == total_credit)
+        // 7. Balanced double-entry check in both transaction currency and base currency
         if (totalDebit.compareTo(totalCredit) != 0) {
             throw new BusinessException("JOURNAL_UNBALANCED",
                     "Total debit (" + totalDebit + ") must strictly equal total credit (" + totalCredit + ")");
+        }
+        if (totalBaseDebit.compareTo(totalBaseCredit) != 0) {
+            throw new BusinessException("JOURNAL_UNBALANCED",
+                    "Total base debit (" + totalBaseDebit + ") must strictly equal total base credit (" + totalBaseCredit + ")");
         }
 
         entry.setTotalDebit(totalDebit);
@@ -356,6 +379,13 @@ public class PostingServiceImpl implements PostingService {
 
         if (journalEntryRepository.existsByCompanyIdAndReversalOfId(companyId, id)) {
             throw new BusinessException("DUPLICATE_REVERSAL", "Journal entry " + original.getEntryNo() + " has already been reversed");
+        }
+
+        boolean hasReconciledLine = original.getLines().stream()
+                .anyMatch(l -> Boolean.TRUE.equals(l.getIsReconciled()));
+        if (hasReconciledLine) {
+            throw new BusinessException("JOURNAL_RECONCILED",
+                    "Cannot reverse journal entry " + original.getEntryNo() + " because one or more lines have been bank-reconciled. Unmatch in Bank Reconciliation first.");
         }
 
         LocalDate reversalDate = LocalDate.now();
@@ -459,8 +489,14 @@ public class PostingServiceImpl implements PostingService {
             line.setDescription(lineReq.description());
             line.setDebit(debit);
             line.setCredit(credit);
-            line.setBaseDebit(debit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
-            line.setBaseCredit(credit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP));
+            BigDecimal baseDebit = lineReq.baseDebit() != null
+                    ? lineReq.baseDebit().setScale(2, RoundingMode.HALF_UP)
+                    : debit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal baseCredit = lineReq.baseCredit() != null
+                    ? lineReq.baseCredit().setScale(2, RoundingMode.HALF_UP)
+                    : credit.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+            line.setBaseDebit(baseDebit);
+            line.setBaseCredit(baseCredit);
             line.setPartyType(lineReq.partyType());
             line.setPartyId(lineReq.partyId());
 

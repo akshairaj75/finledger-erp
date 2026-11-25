@@ -46,6 +46,9 @@ public class Payment extends BaseEntity {
     @Column(name = "currency_code", length = 3, nullable = false)
     private String currencyCode;
 
+    @Column(name = "exchange_rate", precision = 18, scale = 6, nullable = false)
+    private BigDecimal exchangeRate = BigDecimal.ONE.setScale(6);
+
     @Column(name = "amount", precision = 18, scale = 2, nullable = false)
     private BigDecimal amount = BigDecimal.ZERO;
 
@@ -150,6 +153,14 @@ public class Payment extends BaseEntity {
 
     public void setCurrencyCode(String currencyCode) {
         this.currencyCode = currencyCode;
+    }
+
+    public BigDecimal getExchangeRate() {
+        return exchangeRate;
+    }
+
+    public void setExchangeRate(BigDecimal exchangeRate) {
+        this.exchangeRate = exchangeRate;
     }
 
     public BigDecimal getAmount() {

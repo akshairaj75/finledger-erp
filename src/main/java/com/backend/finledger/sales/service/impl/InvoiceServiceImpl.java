@@ -367,9 +367,14 @@ public class InvoiceServiceImpl implements InvoiceService {
                             );
 
                             line.setUnitCost(sm.getUnitCost());
-                            BigDecimal cogsVal = line.getQuantity().multiply(sm.getUnitCost()).setScale(2, RoundingMode.HALF_UP);
+                            BigDecimal cogsBaseVal = line.getQuantity().multiply(sm.getUnitCost()).setScale(2, RoundingMode.HALF_UP);
+                            BigDecimal invRate = (invoice.getExchangeRate() != null && invoice.getExchangeRate().compareTo(BigDecimal.ZERO) > 0)
+                                    ? invoice.getExchangeRate() : BigDecimal.ONE;
+                            BigDecimal cogsTxVal = invRate.compareTo(BigDecimal.ONE) == 0
+                                    ? cogsBaseVal
+                                    : cogsBaseVal.divide(invRate, 2, RoundingMode.HALF_UP);
 
-                            if (cogsVal.compareTo(BigDecimal.ZERO) > 0) {
+                            if (cogsBaseVal.compareTo(BigDecimal.ZERO) > 0) {
                                 Long cogsAcc = item.getCogsAccountId();
                                 if (cogsAcc == null) {
                                     cogsAcc = accountRepository.findByCompanyIdAndCode(companyId, "5100")
@@ -389,10 +394,12 @@ public class InvoiceServiceImpl implements InvoiceService {
                                         cogsAcc,
                                         line.getCostCenterId(),
                                         "COGS (" + item.getSku() + ") - " + invoice.getInvoiceNo(),
-                                        cogsVal,
+                                        cogsTxVal,
                                         BigDecimal.ZERO,
                                         null,
-                                        null
+                                        null,
+                                        cogsBaseVal,
+                                        BigDecimal.ZERO
                                 ));
 
                                 journalLines.add(new JournalLineRequest(
@@ -400,9 +407,11 @@ public class InvoiceServiceImpl implements InvoiceService {
                                         line.getCostCenterId(),
                                         "Inventory Relief (" + item.getSku() + ") - " + invoice.getInvoiceNo(),
                                         BigDecimal.ZERO,
-                                        cogsVal,
+                                        cogsTxVal,
                                         null,
-                                        null
+                                        null,
+                                        BigDecimal.ZERO,
+                                        cogsBaseVal
                                 ));
                             }
                         }

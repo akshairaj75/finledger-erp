@@ -8,6 +8,7 @@ import com.backend.finledger.banking.repository.BankStatementLineRepository;
 import com.backend.finledger.banking.repository.BankStatementRepository;
 import com.backend.finledger.banking.service.BankReconciliationService;
 import com.backend.finledger.common.BusinessException;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.ledger.dto.CreateJournalEntryRequest;
 import com.backend.finledger.ledger.dto.JournalEntryDto;
 import com.backend.finledger.ledger.dto.JournalLineDto;
@@ -95,13 +96,8 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
     @Override
     @Transactional(readOnly = true)
     public BankReconciliationDto getReconciliationById(Long id) {
-        BankReconciliation recon = reconciliationRepository.findById(id)
-                .orElseThrow(() -> new BusinessException("RECONCILIATION_NOT_FOUND", "Reconciliation not found: " + id));
-
-        Long companyId = CurrentUser.getCompanyId();
-        BankAccount bankAccount = bankAccountRepository.findByCompanyIdAndId(companyId, recon.getBankAccountId())
-                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND", "Bank account not found: " + recon.getBankAccountId()));
-
+        BankReconciliation recon = getReconciliationOrThrow(id);
+        BankAccount bankAccount = getBankAccountOrThrow(recon.getBankAccountId());
         return buildReconciliationDto(recon, bankAccount);
     }
 
@@ -109,10 +105,9 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
     @Transactional(readOnly = true)
     public List<BankReconciliationDto> getReconciliationsByBankAccountId(Long bankAccountId) {
         Long companyId = CurrentUser.getCompanyId();
-        BankAccount bankAccount = bankAccountRepository.findByCompanyIdAndId(companyId, bankAccountId)
-                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND", "Bank account not found: " + bankAccountId));
+        BankAccount bankAccount = getBankAccountOrThrow(bankAccountId);
 
-        return reconciliationRepository.findByBankAccountIdOrderByStatementDateDesc(bankAccountId).stream()
+        return reconciliationRepository.findByCompanyIdAndBankAccountIdOrderByStatementDateDesc(companyId, bankAccountId).stream()
                 .map(r -> buildReconciliationDto(r, bankAccount))
                 .collect(Collectors.toList());
     }
@@ -120,16 +115,17 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
     @Override
     @Transactional
     public BankReconciliationDto match(Long reconciliationId, ReconciliationMatchRequest request) {
+        Long companyId = CurrentUser.getCompanyId();
         BankReconciliation recon = getReconciliationOrThrow(reconciliationId);
         assertInProgress(recon);
 
         BankAccount bankAccount = getBankAccountOrThrow(recon.getBankAccountId());
+        BankStatementLine stmtLine = getCompanyStatementLineOrThrow(companyId, request.statementLineId(), recon.getBankAccountId());
 
-        BankStatementLine stmtLine = statementLineRepository.findById(request.statementLineId())
-                .orElseThrow(() -> new BusinessException("STATEMENT_LINE_NOT_FOUND", "Statement line not found: " + request.statementLineId()));
-
-        JournalLine journalLine = journalLineRepository.findById(request.journalLineId())
-                .orElseThrow(() -> new BusinessException("JOURNAL_LINE_NOT_FOUND", "Journal line not found: " + request.journalLineId()));
+        JournalLine journalLine = journalLineRepository.findByCompanyIdAndId(companyId, request.journalLineId())
+                .orElseThrow(() -> journalLineRepository.existsById(request.journalLineId())
+                        ? new ForbiddenException("ACCESS_DENIED", "Journal line does not belong to current company: " + request.journalLineId())
+                        : new BusinessException("JOURNAL_LINE_NOT_FOUND", "Journal line not found: " + request.journalLineId()));
 
         if (!journalLine.getAccountId().equals(bankAccount.getGlAccountId())) {
             throw new BusinessException("INVALID_GL_ACCOUNT", "Journal line does not belong to the bank GL account");
@@ -151,16 +147,15 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
     @Override
     @Transactional
     public BankReconciliationDto unmatch(Long reconciliationId, Long statementLineId) {
+        Long companyId = CurrentUser.getCompanyId();
         BankReconciliation recon = getReconciliationOrThrow(reconciliationId);
         assertInProgress(recon);
 
         BankAccount bankAccount = getBankAccountOrThrow(recon.getBankAccountId());
-
-        BankStatementLine stmtLine = statementLineRepository.findById(statementLineId)
-                .orElseThrow(() -> new BusinessException("STATEMENT_LINE_NOT_FOUND", "Statement line not found: " + statementLineId));
+        BankStatementLine stmtLine = getCompanyStatementLineOrThrow(companyId, statementLineId, recon.getBankAccountId());
 
         if (stmtLine.getMatchedJournalLineId() != null) {
-            journalLineRepository.findById(stmtLine.getMatchedJournalLineId()).ifPresent(jl -> {
+            journalLineRepository.findByCompanyIdAndId(companyId, stmtLine.getMatchedJournalLineId()).ifPresent(jl -> {
                 jl.setIsReconciled(false);
                 journalLineRepository.save(jl);
             });
@@ -271,8 +266,7 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
         BankAccount bankAccount = getBankAccountOrThrow(recon.getBankAccountId());
         Long companyId = CurrentUser.getCompanyId();
 
-        BankStatementLine stmtLine = statementLineRepository.findById(request.statementLineId())
-                .orElseThrow(() -> new BusinessException("STATEMENT_LINE_NOT_FOUND", "Statement line not found: " + request.statementLineId()));
+        BankStatementLine stmtLine = getCompanyStatementLineOrThrow(companyId, request.statementLineId(), recon.getBankAccountId());
 
         BigDecimal chargeAmount = stmtLine.getAmount().abs();
         if (chargeAmount.compareTo(BigDecimal.ZERO) == 0) {
@@ -432,7 +426,7 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
                 .collect(Collectors.toSet());
 
         List<JournalLine> matchedLines = matchedJlIds.isEmpty() ? List.of()
-                : journalLineRepository.findAllById(matchedJlIds);
+                : journalLineRepository.findByCompanyIdAndIdIn(companyId, matchedJlIds);
 
         Map<Long, JournalLine> combinedMap = new LinkedHashMap<>();
         for (JournalLine jl : unreconciledLines) {
@@ -498,8 +492,25 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
     }
 
     private BankReconciliation getReconciliationOrThrow(Long id) {
-        return reconciliationRepository.findById(id)
-                .orElseThrow(() -> new BusinessException("RECONCILIATION_NOT_FOUND", "Reconciliation not found: " + id));
+        Long companyId = CurrentUser.getCompanyId();
+        return reconciliationRepository.findByCompanyIdAndId(companyId, id)
+                .orElseThrow(() -> reconciliationRepository.existsById(id)
+                        ? new ForbiddenException("ACCESS_DENIED", "Reconciliation does not belong to current company: " + id)
+                        : new BusinessException("RECONCILIATION_NOT_FOUND", "Reconciliation not found: " + id));
+    }
+
+    private BankStatementLine getCompanyStatementLineOrThrow(Long companyId, Long statementLineId, Long expectedBankAccountId) {
+        BankStatementLine stmtLine = statementLineRepository.findByCompanyIdAndId(companyId, statementLineId)
+                .orElseThrow(() -> statementLineRepository.existsById(statementLineId)
+                        ? new ForbiddenException("ACCESS_DENIED", "Statement line does not belong to current company: " + statementLineId)
+                        : new BusinessException("STATEMENT_LINE_NOT_FOUND", "Statement line not found: " + statementLineId));
+
+        if (stmtLine.getBankStatement() != null
+                && !Objects.equals(stmtLine.getBankStatement().getBankAccountId(), expectedBankAccountId)) {
+            throw new ForbiddenException("BANK_ACCOUNT_MISMATCH",
+                    "Statement line does not belong to bank account " + expectedBankAccountId);
+        }
+        return stmtLine;
     }
 
     private BankAccount getBankAccountOrThrow(Long bankAccountId) {

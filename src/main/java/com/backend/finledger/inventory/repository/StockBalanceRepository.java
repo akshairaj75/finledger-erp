@@ -26,5 +26,20 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
     List<StockBalance> findByWarehouseId(Long warehouseId);
 
     List<StockBalance> findByItemIdIn(Collection<Long> itemIds);
+
+    @Query("SELECT sb FROM StockBalance sb JOIN Item i ON sb.itemId = i.id JOIN Warehouse w ON sb.warehouseId = w.id " +
+           "WHERE i.companyId = :companyId AND w.companyId = :companyId AND sb.itemId = :itemId AND sb.warehouseId = :warehouseId")
+    Optional<StockBalance> findByCompanyIdAndItemIdAndWarehouseId(
+            @Param("companyId") Long companyId,
+            @Param("itemId") Long itemId,
+            @Param("warehouseId") Long warehouseId);
+
+    @Query("SELECT sb FROM StockBalance sb JOIN Item i ON sb.itemId = i.id " +
+           "WHERE i.companyId = :companyId AND sb.itemId = :itemId")
+    List<StockBalance> findByCompanyIdAndItemId(@Param("companyId") Long companyId, @Param("itemId") Long itemId);
+
+    @Query("SELECT sb FROM StockBalance sb JOIN Warehouse w ON sb.warehouseId = w.id " +
+           "WHERE w.companyId = :companyId AND sb.warehouseId = :warehouseId")
+    List<StockBalance> findByCompanyIdAndWarehouseId(@Param("companyId") Long companyId, @Param("warehouseId") Long warehouseId);
 }
 

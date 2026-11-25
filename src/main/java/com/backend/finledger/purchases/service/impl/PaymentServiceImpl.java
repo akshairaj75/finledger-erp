@@ -8,11 +8,17 @@ import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
+import com.backend.finledger.currency.entity.ExchangeRate;
+import com.backend.finledger.currency.repository.ExchangeRateRepository;
 import com.backend.finledger.ledger.dto.JournalEntryDto;
 import com.backend.finledger.ledger.dto.JournalLineRequest;
 import com.backend.finledger.ledger.dto.SourceDocumentPostingRequest;
+import com.backend.finledger.ledger.entity.Account;
+import com.backend.finledger.ledger.entity.AccountType;
 import com.backend.finledger.ledger.entity.JournalSourceType;
 import com.backend.finledger.ledger.entity.PartyType;
+import com.backend.finledger.ledger.repository.AccountRepository;
+import com.backend.finledger.ledger.repository.JournalLineRepository;
 import com.backend.finledger.ledger.service.PostingService;
 import com.backend.finledger.purchases.dto.PaymentAllocationDto;
 import com.backend.finledger.purchases.dto.PaymentAllocationRequest;
@@ -30,6 +36,7 @@ import com.backend.finledger.purchases.repository.PaymentRepository;
 import com.backend.finledger.purchases.repository.VendorRepository;
 import com.backend.finledger.purchases.service.PaymentService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -51,6 +58,9 @@ public class PaymentServiceImpl implements PaymentService {
     private final PostingService postingService;
     private final NumberSeriesService numberSeriesService;
     private final PurchasesMapper purchasesMapper;
+    private final AccountRepository accountRepository;
+    private final JournalLineRepository journalLineRepository;
+    private final ExchangeRateRepository exchangeRateRepository;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                               VendorRepository vendorRepository,
@@ -60,6 +70,22 @@ public class PaymentServiceImpl implements PaymentService {
                               PostingService postingService,
                               NumberSeriesService numberSeriesService,
                               PurchasesMapper purchasesMapper) {
+        this(paymentRepository, vendorRepository, billRepository, bankAccountRepository,
+                companyRepository, postingService, numberSeriesService, purchasesMapper, null, null, null);
+    }
+
+    @Autowired
+    public PaymentServiceImpl(PaymentRepository paymentRepository,
+                              VendorRepository vendorRepository,
+                              BillRepository billRepository,
+                              BankAccountRepository bankAccountRepository,
+                              CompanyRepository companyRepository,
+                              PostingService postingService,
+                              NumberSeriesService numberSeriesService,
+                              PurchasesMapper purchasesMapper,
+                              AccountRepository accountRepository,
+                              JournalLineRepository journalLineRepository,
+                              ExchangeRateRepository exchangeRateRepository) {
         this.paymentRepository = paymentRepository;
         this.vendorRepository = vendorRepository;
         this.billRepository = billRepository;
@@ -68,6 +94,9 @@ public class PaymentServiceImpl implements PaymentService {
         this.postingService = postingService;
         this.numberSeriesService = numberSeriesService;
         this.purchasesMapper = purchasesMapper;
+        this.accountRepository = accountRepository;
+        this.journalLineRepository = journalLineRepository;
+        this.exchangeRateRepository = exchangeRateRepository;
     }
 
     @Override
@@ -93,6 +122,8 @@ public class PaymentServiceImpl implements PaymentService {
         if (currency == null) {
             currency = company.getBaseCurrency();
         }
+        BigDecimal exchangeRate = resolveExchangeRate(companyId, currency, company.getBaseCurrency(),
+                request.paymentDate(), request.exchangeRate());
 
         Payment payment = new Payment();
         payment.setCompanyId(companyId);
@@ -102,9 +133,11 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setPaymentMethod(request.paymentMethod());
         payment.setReference(request.reference());
         payment.setCurrencyCode(currency);
+        payment.setExchangeRate(exchangeRate);
         payment.setAmount(request.amount().setScale(2, RoundingMode.HALF_UP));
 
         BigDecimal totalAllocated = BigDecimal.ZERO;
+        BigDecimal apAllocatedBase = BigDecimal.ZERO;
         Set<Long> seenBillIds = new HashSet<>();
 
         if (request.allocations() != null && !request.allocations().isEmpty()) {
@@ -133,6 +166,13 @@ public class PaymentServiceImpl implements PaymentService {
                 }
 
                 totalAllocated = totalAllocated.add(allocAmount);
+                BigDecimal billRate = bill.getCurrencyCode() != null
+                        && bill.getCurrencyCode().equalsIgnoreCase(currency)
+                        && bill.getExchangeRate() != null
+                        && bill.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                        ? bill.getExchangeRate()
+                        : exchangeRate;
+                apAllocatedBase = apAllocatedBase.add(allocAmount.multiply(billRate).setScale(2, RoundingMode.HALF_UP));
 
                 BigDecimal newPaid = bill.getAmountPaid().add(allocAmount).setScale(2, RoundingMode.HALF_UP);
                 BigDecimal newDue = bill.getBalanceDue().subtract(allocAmount).setScale(2, RoundingMode.HALF_UP);
@@ -165,26 +205,65 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setStatus(PaymentStatus.POSTED);
         payment = paymentRepository.save(payment);
 
-        List<JournalLineRequest> journalLines = List.of(
-                new JournalLineRequest(
-                        vendor.getApAccountId(),
-                        null,
-                        "Payment #" + payment.getPaymentNo() + " to " + vendor.getName(),
-                        payment.getAmount(),
-                        BigDecimal.ZERO,
-                        PartyType.VENDOR,
-                        vendor.getId()
-                ),
-                new JournalLineRequest(
-                        bankAccount.getGlAccountId(),
-                        null,
-                        "Payment #" + payment.getPaymentNo() + " via " + payment.getPaymentMethod(),
-                        BigDecimal.ZERO,
-                        payment.getAmount(),
-                        null,
-                        null
-                )
-        );
+        BigDecimal bankBaseCredit = payment.getAmount().multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal apBaseDebit = apAllocatedBase
+                .add(unapplied.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP))
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal fxDiff = bankBaseCredit.subtract(apBaseDebit).setScale(2, RoundingMode.HALF_UP);
+
+        List<JournalLineRequest> journalLines = new ArrayList<>();
+        journalLines.add(new JournalLineRequest(
+                vendor.getApAccountId(),
+                null,
+                "Payment #" + payment.getPaymentNo() + " to " + vendor.getName(),
+                payment.getAmount(),
+                BigDecimal.ZERO,
+                PartyType.VENDOR,
+                vendor.getId(),
+                apBaseDebit,
+                BigDecimal.ZERO
+        ));
+        journalLines.add(new JournalLineRequest(
+                bankAccount.getGlAccountId(),
+                null,
+                "Payment #" + payment.getPaymentNo() + " via " + payment.getPaymentMethod(),
+                BigDecimal.ZERO,
+                payment.getAmount(),
+                null,
+                null,
+                BigDecimal.ZERO,
+                bankBaseCredit
+        ));
+
+        if (fxDiff.compareTo(BigDecimal.ZERO) > 0) {
+            // Paid more base currency than original AP -> Realized FX Loss
+            Long fxLossAccountId = resolveFxAccountId(companyId, false);
+            journalLines.add(new JournalLineRequest(
+                    fxLossAccountId,
+                    null,
+                    "Realized FX Loss on Payment #" + payment.getPaymentNo(),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    null,
+                    null,
+                    fxDiff,
+                    BigDecimal.ZERO
+            ));
+        } else if (fxDiff.compareTo(BigDecimal.ZERO) < 0) {
+            // Paid less base currency than original AP -> Realized FX Gain
+            Long fxGainAccountId = resolveFxAccountId(companyId, true);
+            journalLines.add(new JournalLineRequest(
+                    fxGainAccountId,
+                    null,
+                    "Realized FX Gain on Payment #" + payment.getPaymentNo(),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    fxDiff.abs()
+            ));
+        }
 
         String reference = payment.getPaymentNo();
         if (payment.getReference() != null && !payment.getReference().isBlank()) {
@@ -198,7 +277,7 @@ public class PaymentServiceImpl implements PaymentService {
                 reference,
                 "Vendor Payment #" + payment.getPaymentNo() + " - " + vendor.getName(),
                 payment.getCurrencyCode(),
-                BigDecimal.ONE,
+                payment.getExchangeRate(),
                 journalLines
         );
 
@@ -265,6 +344,12 @@ public class PaymentServiceImpl implements PaymentService {
             throw new BusinessException("ALREADY_VOID", "Payment is already voided");
         }
 
+        if (payment.getJournalEntryId() != null && journalLineRepository != null
+                && journalLineRepository.countReconciledLinesByJournalEntryId(companyId, payment.getJournalEntryId()) > 0) {
+            throw new BusinessException("PAYMENT_RECONCILED",
+                    "Cannot void payment " + payment.getPaymentNo() + " because its journal entry is bank-reconciled. Unmatch in Bank Reconciliation first.");
+        }
+
         // 1. Roll back all bill allocations
         for (PaymentAllocation alloc : payment.getAllocations()) {
             Bill bill = billRepository.findByCompanyIdAndId(companyId, alloc.getBillId()).orElse(null);
@@ -323,7 +408,54 @@ public class PaymentServiceImpl implements PaymentService {
                 unapplied != null ? unapplied : BigDecimal.ZERO,
                 payment.getStatus(),
                 payment.getJournalEntryId(),
-                allocDtos
+                allocDtos,
+                payment.getExchangeRate() != null ? payment.getExchangeRate() : BigDecimal.ONE
         );
+    }
+
+    private BigDecimal resolveExchangeRate(Long companyId, String currency, String baseCurrency,
+                                             java.time.LocalDate txnDate, BigDecimal requestedRate) {
+        if (requestedRate != null && requestedRate.compareTo(BigDecimal.ZERO) > 0) {
+            return requestedRate.setScale(6, RoundingMode.HALF_UP);
+        }
+        if (currency == null || baseCurrency == null || currency.equalsIgnoreCase(baseCurrency)) {
+            return BigDecimal.ONE.setScale(6, RoundingMode.HALF_UP);
+        }
+        if (exchangeRateRepository != null) {
+            return exchangeRateRepository
+                    .findFirstByCompanyIdAndFromCurrencyAndToCurrencyAndRateDateLessThanEqualOrderByRateDateDesc(
+                            companyId, currency, baseCurrency, txnDate)
+                    .map(ExchangeRate::getRate)
+                    .map(r -> r.setScale(6, RoundingMode.HALF_UP))
+                    .orElse(BigDecimal.ONE.setScale(6, RoundingMode.HALF_UP));
+        }
+        return BigDecimal.ONE.setScale(6, RoundingMode.HALF_UP);
+    }
+
+    private Long resolveFxAccountId(Long companyId, boolean gain) {
+        if (accountRepository == null) {
+            throw new BusinessException("FX_ACCOUNT_NOT_FOUND", "Account repository unavailable to resolve FX gain/loss account");
+        }
+        String preferredCode = gain ? "4900" : "6200";
+        Optional<Account> byCode = accountRepository.findByCompanyIdAndCode(companyId, preferredCode);
+        if (byCode.isPresent() && !Boolean.TRUE.equals(byCode.get().getIsGroup()) && Boolean.TRUE.equals(byCode.get().getIsActive())) {
+            return byCode.get().getId();
+        }
+        AccountType targetType = gain ? AccountType.INCOME : AccountType.EXPENSE;
+        List<Account> companyAccounts = accountRepository.findByCompanyIdOrderByCodeAsc(companyId);
+        return companyAccounts.stream()
+                .filter(a -> a.getAccountType() == targetType && !Boolean.TRUE.equals(a.getIsGroup()) && Boolean.TRUE.equals(a.getIsActive()))
+                .filter(a -> {
+                    String n = a.getName() != null ? a.getName().toLowerCase() : "";
+                    return n.contains("foreign exchange") || n.contains("fx");
+                })
+                .map(Account::getId)
+                .findFirst()
+                .orElseGet(() -> companyAccounts.stream()
+                        .filter(a -> a.getAccountType() == targetType && !Boolean.TRUE.equals(a.getIsGroup()) && Boolean.TRUE.equals(a.getIsActive()))
+                        .map(Account::getId)
+                        .findFirst()
+                        .orElseThrow(() -> new BusinessException("FX_ACCOUNT_NOT_FOUND",
+                                "No active " + (gain ? "FX Gain (INCOME)" : "FX Loss (EXPENSE)") + " account found for company: " + companyId)));
     }
 }

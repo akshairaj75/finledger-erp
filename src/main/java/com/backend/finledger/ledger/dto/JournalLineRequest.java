@@ -13,5 +13,18 @@ public record JournalLineRequest(
     BigDecimal debit,
     BigDecimal credit,
     PartyType partyType,
-    Long partyId
-) {}
+    Long partyId,
+    BigDecimal baseDebit,
+    BigDecimal baseCredit
+) {
+    public JournalLineRequest(
+            Long accountId,
+            Long costCenterId,
+            String description,
+            BigDecimal debit,
+            BigDecimal credit,
+            PartyType partyType,
+            Long partyId) {
+        this(accountId, costCenterId, description, debit, credit, partyType, partyId, null, null);
+    }
+}

@@ -78,7 +78,9 @@ public class InventoryValuationReconciliationJob {
 
             Set<Long> inventoryAccountIds = accountRepository.findByCompanyIdOrderByCodeAsc(companyId).stream()
                     .filter(a -> a.getAccountType() == AccountType.ASSET && !Boolean.TRUE.equals(a.getIsGroup()))
-                    .filter(a -> "INVENTORY".equalsIgnoreCase(a.getSubType()))
+                    .filter(a -> "INVENTORY".equalsIgnoreCase(a.getSubType())
+                            || "STOCK".equalsIgnoreCase(a.getSubType())
+                            || "1300".equals(a.getCode()))
                     .map(Account::getId)
                     .collect(Collectors.toSet());
 

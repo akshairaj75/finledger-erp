@@ -15,6 +15,7 @@ import com.backend.finledger.ledger.dto.GeneralLedgerReportDto;
 import com.backend.finledger.ledger.dto.TrialBalanceReportDto;
 import com.backend.finledger.ledger.entity.Account;
 import com.backend.finledger.ledger.entity.AccountType;
+import com.backend.finledger.ledger.entity.JournalSourceType;
 import com.backend.finledger.ledger.entity.NormalBalance;
 import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.ledger.repository.JournalEntryRepository;
@@ -121,7 +122,8 @@ class DashboardAndReportsTest {
         when(expSummary.getTotalDebit()).thenReturn(BigDecimal.valueOf(20000));
         when(expSummary.getTotalCredit()).thenReturn(BigDecimal.ZERO);
 
-        when(journalLineRepository.getAccountBalanceSummariesBetween(eq(1L), any(LocalDate.class), any(LocalDate.class), eq(null)))
+        when(journalLineRepository.getAccountBalanceSummariesBetweenExcludingSourceType(
+                eq(1L), any(LocalDate.class), any(LocalDate.class), eq(null), eq(JournalSourceType.CLOSING)))
                 .thenReturn(List.of(revSummary, expSummary));
 
         ArAgeingReportDto arDto = new ArAgeingReportDto(
@@ -211,7 +213,8 @@ class DashboardAndReportsTest {
         when(s3.getTotalDebit()).thenReturn(BigDecimal.valueOf(25000));
         when(s3.getTotalCredit()).thenReturn(BigDecimal.ZERO);
 
-        when(journalLineRepository.getAccountBalanceSummariesBetween(eq(1L), any(), any(), eq(null)))
+        when(journalLineRepository.getAccountBalanceSummariesBetweenExcludingSourceType(
+                eq(1L), any(), any(), eq(null), eq(JournalSourceType.CLOSING)))
                 .thenReturn(List.of(s1, s2, s3));
 
         ProfitLossReportDto pnl = reportService.getProfitLossReport(
@@ -240,7 +243,7 @@ class DashboardAndReportsTest {
         when(journalLineRepository.getAccountBalanceSummaries(eq(1L), eq(LocalDate.of(2026, 10, 31))))
                 .thenReturn(Collections.emptyList());
         when(journalLineRepository.getAccountBalanceSummariesBetween(
-                eq(1L), eq(LocalDate.of(2026, 1, 1)), eq(LocalDate.of(2026, 10, 31)), eq(null)))
+                eq(1L), any(LocalDate.class), any(LocalDate.class), eq(null)))
                 .thenReturn(Collections.emptyList());
 
         byte[] xlsxBytes = reportService.exportReport("balance-sheet", "xlsx", Map.of("asOf", "2026-10-31"));
@@ -261,5 +264,68 @@ class DashboardAndReportsTest {
 
         byte[] tbPdf = reportService.exportReport("trial-balance", "pdf", Map.of("asOf", "2026-10-31"));
         assertEquals("%PDF", new String(tbPdf, 0, 4));
+    }
+
+    @Test
+    @DisplayName("Should classify Balance Sheet current accounts properly without duplicating Retained Earnings")
+    void testGetBalanceSheetClassificationAndRetainedEarnings() {
+        Account ar = new Account(1L, "1200", "Accounts Receivable", AccountType.ASSET, "CURRENT_ASSET", null, false, NormalBalance.DEBIT);
+        ar.setId(12L);
+        Account inv = new Account(1L, "1300", "Inventory", AccountType.ASSET, "STOCK", null, false, NormalBalance.DEBIT);
+        inv.setId(13L);
+        Account vatIn = new Account(1L, "1400", "VAT Recoverable (Input)", AccountType.ASSET, "TAX", null, false, NormalBalance.DEBIT);
+        vatIn.setId(14L);
+        Account fixedAsset = new Account(1L, "1500", "Equipment", AccountType.ASSET, "FIXED_ASSET", null, false, NormalBalance.DEBIT);
+        fixedAsset.setId(15L);
+
+        Account vatOut = new Account(1L, "2200", "VAT Payable (Output)", AccountType.LIABILITY, "TAX", null, false, NormalBalance.CREDIT);
+        vatOut.setId(22L);
+        Account accrued = new Account(1L, "2300", "Accrued Expenses", AccountType.LIABILITY, "ACCRUAL", null, false, NormalBalance.CREDIT);
+        accrued.setId(23L);
+
+        Account capital = new Account(1L, "3100", "Owner's Capital", AccountType.EQUITY, "EQUITY", null, false, NormalBalance.CREDIT);
+        capital.setId(31L);
+        Account retained = new Account(1L, "3200", "Retained Earnings", AccountType.EQUITY, "EQUITY", null, false, NormalBalance.CREDIT);
+        retained.setId(32L);
+
+        when(accountRepository.findByCompanyIdOrderByCodeAsc(1L))
+                .thenReturn(List.of(ar, inv, vatIn, fixedAsset, vatOut, accrued, capital, retained));
+
+        JournalLineRepository.AccountBalanceSummary sAr = mockSummary(12L, BigDecimal.valueOf(1000), BigDecimal.ZERO);
+        JournalLineRepository.AccountBalanceSummary sInv = mockSummary(13L, BigDecimal.valueOf(2000), BigDecimal.ZERO);
+        JournalLineRepository.AccountBalanceSummary sVatIn = mockSummary(14L, BigDecimal.valueOf(500), BigDecimal.ZERO);
+        JournalLineRepository.AccountBalanceSummary sFix = mockSummary(15L, BigDecimal.valueOf(5000), BigDecimal.ZERO);
+        JournalLineRepository.AccountBalanceSummary sVatOut = mockSummary(22L, BigDecimal.ZERO, BigDecimal.valueOf(800));
+        JournalLineRepository.AccountBalanceSummary sAccr = mockSummary(23L, BigDecimal.ZERO, BigDecimal.valueOf(700));
+        JournalLineRepository.AccountBalanceSummary sCap = mockSummary(31L, BigDecimal.ZERO, BigDecimal.valueOf(4000));
+        JournalLineRepository.AccountBalanceSummary sRet = mockSummary(32L, BigDecimal.ZERO, BigDecimal.valueOf(3000));
+
+        LocalDate asOf = LocalDate.of(2026, 10, 31);
+        when(journalLineRepository.getAccountBalanceSummaries(1L, asOf))
+                .thenReturn(List.of(sAr, sInv, sVatIn, sFix, sVatOut, sAccr, sCap, sRet));
+        when(journalLineRepository.getAccountBalanceSummariesBetween(eq(1L), any(), any(), eq(null)))
+                .thenReturn(Collections.emptyList());
+
+        BalanceSheetReportDto bs = reportService.getBalanceSheetReport(asOf, null);
+
+        assertEquals(3, bs.currentAssets().size(), "1200, 1300, 1400 must be Current Assets");
+        assertEquals(1, bs.nonCurrentAssets().size(), "Only 1500 Fixed Asset is Non-Current Asset");
+        assertEquals(2, bs.currentLiabilities().size(), "2200 and 2300 must be Current Liabilities");
+        assertTrue(bs.nonCurrentLiabilities().isEmpty());
+
+        // 3200 Retained Earnings must NOT be duplicated in equityLines
+        assertEquals(1, bs.equityLines().size());
+        assertEquals("3100", bs.equityLines().get(0).accountCode());
+        assertEquals(0, BigDecimal.valueOf(3000).compareTo(bs.retainedEarnings()));
+        assertEquals(0, BigDecimal.valueOf(7000).compareTo(bs.totalEquity()));
+        assertTrue(bs.balanced());
+    }
+
+    private JournalLineRepository.AccountBalanceSummary mockSummary(Long accId, BigDecimal dr, BigDecimal cr) {
+        JournalLineRepository.AccountBalanceSummary s = mock(JournalLineRepository.AccountBalanceSummary.class);
+        when(s.getAccountId()).thenReturn(accId);
+        when(s.getTotalDebit()).thenReturn(dr);
+        when(s.getTotalCredit()).thenReturn(cr);
+        return s;
     }
 }

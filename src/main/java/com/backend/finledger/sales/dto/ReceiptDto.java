@@ -24,6 +24,30 @@ public record ReceiptDto(
         BigDecimal unappliedAmount,
         ReceiptStatus status,
         Long journalEntryId,
-        List<ReceiptAllocationDto> allocations
-) {}
+        List<ReceiptAllocationDto> allocations,
+        BigDecimal exchangeRate
+) {
+    public ReceiptDto(
+            Long id,
+            Long companyId,
+            String receiptNo,
+            Long customerId,
+            String customerName,
+            String customerCode,
+            LocalDate receiptDate,
+            Long bankAccountId,
+            String bankAccountName,
+            PaymentMethod paymentMethod,
+            String reference,
+            String currencyCode,
+            BigDecimal amount,
+            BigDecimal unappliedAmount,
+            ReceiptStatus status,
+            Long journalEntryId,
+            List<ReceiptAllocationDto> allocations) {
+        this(id, companyId, receiptNo, customerId, customerName, customerCode, receiptDate,
+                bankAccountId, bankAccountName, paymentMethod, reference, currencyCode,
+                amount, unappliedAmount, status, journalEntryId, allocations, BigDecimal.ONE);
+    }
+}
 

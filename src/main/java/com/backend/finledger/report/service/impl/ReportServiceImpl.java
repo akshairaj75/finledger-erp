@@ -51,6 +51,8 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -70,6 +72,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class ReportServiceImpl implements ReportService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReportServiceImpl.class);
 
     private final AccountRepository accountRepository;
     private final JournalLineRepository journalLineRepository;
@@ -322,6 +326,10 @@ public class ReportServiceImpl implements ReportService {
         }
 
         boolean balanced = grandTotalDebit.compareTo(grandTotalCredit) == 0;
+        if (!balanced) {
+            log.warn("Trial Balance out of balance for company {} as of {}: debit={}, credit={}",
+                    companyId, asOfDate, grandTotalDebit, grandTotalCredit);
+        }
 
         return new TrialBalanceReportDto(
                 asOfDate,
@@ -345,7 +353,8 @@ public class ReportServiceImpl implements ReportService {
         Map<Long, Account> accountMap = accounts.stream().collect(Collectors.toMap(Account::getId, a -> a));
 
         List<JournalLineRepository.AccountBalanceSummary> ytdSummaries =
-                journalLineRepository.getAccountBalanceSummariesBetween(companyId, ytdStart, toDate, null);
+                journalLineRepository.getAccountBalanceSummariesBetweenExcludingSourceType(
+                        companyId, ytdStart, toDate, null, JournalSourceType.CLOSING);
 
         BigDecimal totalRevenueYtd = BigDecimal.ZERO;
         BigDecimal totalExpensesYtd = BigDecimal.ZERO;
@@ -454,7 +463,8 @@ public class ReportServiceImpl implements ReportService {
             LocalDate mEnd = ym.atEndOfMonth();
 
             List<JournalLineRepository.AccountBalanceSummary> mSummaries =
-                    journalLineRepository.getAccountBalanceSummariesBetween(companyId, mStart, mEnd, null);
+                    journalLineRepository.getAccountBalanceSummariesBetweenExcludingSourceType(
+                            companyId, mStart, mEnd, null, JournalSourceType.CLOSING);
 
             BigDecimal mRev = BigDecimal.ZERO;
             BigDecimal mExp = BigDecimal.ZERO;
@@ -538,7 +548,8 @@ public class ReportServiceImpl implements ReportService {
                 .collect(Collectors.toList());
 
         List<JournalLineRepository.AccountBalanceSummary> summaries =
-                journalLineRepository.getAccountBalanceSummariesBetween(companyId, fromDate, toDate, costCenterId);
+                journalLineRepository.getAccountBalanceSummariesBetweenExcludingSourceType(
+                        companyId, fromDate, toDate, costCenterId, JournalSourceType.CLOSING);
         Map<Long, JournalLineRepository.AccountBalanceSummary> summaryMap = summaries.stream()
                 .collect(Collectors.toMap(JournalLineRepository.AccountBalanceSummary::getAccountId, s -> s));
 
@@ -556,7 +567,8 @@ public class ReportServiceImpl implements ReportService {
                 cTo = fromDate.minusDays(1);
             }
             List<JournalLineRepository.AccountBalanceSummary> cSummaries =
-                    journalLineRepository.getAccountBalanceSummariesBetween(companyId, cFrom, cTo, costCenterId);
+                    journalLineRepository.getAccountBalanceSummariesBetweenExcludingSourceType(
+                            companyId, cFrom, cTo, costCenterId, JournalSourceType.CLOSING);
             compareMap = cSummaries.stream()
                     .collect(Collectors.toMap(JournalLineRepository.AccountBalanceSummary::getAccountId, s -> s));
         }
@@ -593,8 +605,11 @@ public class ReportServiceImpl implements ReportService {
             } else if (a.getAccountType() == AccountType.EXPENSE) {
                 BigDecimal net = debit.subtract(credit);
                 BigDecimal cNet = cDebit.subtract(cCredit);
-                boolean isCogs = "COST_OF_SALES".equalsIgnoreCase(a.getSubType())
-                        || (a.getCode() != null && a.getCode().startsWith("5"));
+                String sub = a.getSubType();
+                String code = a.getCode() != null ? a.getCode() : "";
+                boolean isCogs = "COGS".equalsIgnoreCase(sub)
+                        || "COST_OF_SALES".equalsIgnoreCase(sub)
+                        || ((sub == null || sub.isBlank() || "ADJUSTMENT".equalsIgnoreCase(sub)) && code.startsWith("51"));
 
                 if (isCogs) {
                     if (net.compareTo(BigDecimal.ZERO) != 0 || cNet.compareTo(BigDecimal.ZERO) != 0) {
@@ -664,6 +679,7 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal totalCurrentLiabilities = BigDecimal.ZERO;
         BigDecimal totalNonCurrentLiabilities = BigDecimal.ZERO;
         BigDecimal totalEquityAccounts = BigDecimal.ZERO;
+        BigDecimal retainedEarningsAccountsBal = BigDecimal.ZERO;
 
         for (Account a : accounts) {
             JournalLineRepository.AccountBalanceSummary s = summaryMap.get(a.getId());
@@ -673,9 +689,7 @@ public class ReportServiceImpl implements ReportService {
 
             if (a.getAccountType() == AccountType.ASSET) {
                 BigDecimal bal = opening.add(debit).subtract(credit);
-                boolean isCurrent = "CURRENT_ASSET".equalsIgnoreCase(a.getSubType())
-                        || (a.getCode() != null && a.getCode().startsWith("11"));
-                if (isCurrent) {
+                if (isCurrentAsset(a)) {
                     currentAssets.add(new ReportLineDto(a.getId(), a.getCode(), a.getName(), bal, BigDecimal.ZERO, null));
                     totalCurrentAssets = totalCurrentAssets.add(bal);
                 } else {
@@ -684,9 +698,7 @@ public class ReportServiceImpl implements ReportService {
                 }
             } else if (a.getAccountType() == AccountType.LIABILITY) {
                 BigDecimal bal = opening.add(credit).subtract(debit);
-                boolean isCurrent = "CURRENT_LIABILITY".equalsIgnoreCase(a.getSubType())
-                        || (a.getCode() != null && a.getCode().startsWith("21"));
-                if (isCurrent) {
+                if (isCurrentLiability(a)) {
                     currentLiabilities.add(new ReportLineDto(a.getId(), a.getCode(), a.getName(), bal, BigDecimal.ZERO, null));
                     totalCurrentLiabilities = totalCurrentLiabilities.add(bal);
                 } else {
@@ -695,13 +707,35 @@ public class ReportServiceImpl implements ReportService {
                 }
             } else if (a.getAccountType() == AccountType.EQUITY) {
                 BigDecimal bal = opening.add(credit).subtract(debit);
-                equityLines.add(new ReportLineDto(a.getId(), a.getCode(), a.getName(), bal, BigDecimal.ZERO, null));
-                totalEquityAccounts = totalEquityAccounts.add(bal);
+                if (isRetainedEarningsAccount(a)) {
+                    // Track Retained Earnings separately so it is not duplicated in equityLines and retainedEarnings
+                    retainedEarningsAccountsBal = retainedEarningsAccountsBal.add(bal);
+                } else {
+                    equityLines.add(new ReportLineDto(a.getId(), a.getCode(), a.getName(), bal, BigDecimal.ZERO, null));
+                    totalEquityAccounts = totalEquityAccounts.add(bal);
+                }
             }
         }
 
-        // Net income Year to Date for Retained Earnings / Current Period Earnings
+        // Prior-year unclosed P&L (before Jan 1 of asOfDate's year, inclusive of CLOSING JEs so closed years contribute 0)
         LocalDate yearStart = LocalDate.of(asOfDate.getYear(), 1, 1);
+        BigDecimal priorUnclosedIncome = BigDecimal.ZERO;
+        List<JournalLineRepository.AccountBalanceSummary> priorSummaries =
+                journalLineRepository.getAccountBalanceSummariesBetween(companyId, LocalDate.of(1900, 1, 1), yearStart.minusDays(1), null);
+        for (JournalLineRepository.AccountBalanceSummary s : priorSummaries) {
+            Account a = accounts.stream().filter(acc -> acc.getId().equals(s.getAccountId())).findFirst().orElse(null);
+            if (a == null) continue;
+            BigDecimal d = s.getTotalDebit() != null ? s.getTotalDebit() : BigDecimal.ZERO;
+            BigDecimal c = s.getTotalCredit() != null ? s.getTotalCredit() : BigDecimal.ZERO;
+            if (a.getAccountType() == AccountType.INCOME) {
+                priorUnclosedIncome = priorUnclosedIncome.add(c.subtract(d));
+            } else if (a.getAccountType() == AccountType.EXPENSE) {
+                priorUnclosedIncome = priorUnclosedIncome.subtract(d.subtract(c));
+            }
+        }
+        BigDecimal retainedEarnings = retainedEarningsAccountsBal.add(priorUnclosedIncome);
+
+        // Net income Year to Date (inclusive of CLOSING entries so closed current year reflects transfer to 3200)
         List<JournalLineRepository.AccountBalanceSummary> ytdSummaries =
                 journalLineRepository.getAccountBalanceSummariesBetween(companyId, yearStart, asOfDate, null);
         BigDecimal netIncomeYtd = BigDecimal.ZERO;
@@ -719,9 +753,13 @@ public class ReportServiceImpl implements ReportService {
 
         BigDecimal totalAssets = totalCurrentAssets.add(totalNonCurrentAssets);
         BigDecimal totalLiabilities = totalCurrentLiabilities.add(totalNonCurrentLiabilities);
-        BigDecimal totalEquity = totalEquityAccounts.add(netIncomeYtd);
+        BigDecimal totalEquity = totalEquityAccounts.add(retainedEarnings).add(netIncomeYtd);
         BigDecimal totalLiabilitiesAndEquity = totalLiabilities.add(totalEquity);
         boolean balanced = totalAssets.compareTo(totalLiabilitiesAndEquity) == 0;
+        if (!balanced) {
+            log.warn("Balance Sheet out of balance for company {} as of {}: assets={}, liabilitiesAndEquity={}",
+                    companyId, asOfDate, totalAssets, totalLiabilitiesAndEquity);
+        }
 
         return new BalanceSheetReportDto(
                 asOfDate,
@@ -737,12 +775,49 @@ public class ReportServiceImpl implements ReportService {
                 totalNonCurrentLiabilities,
                 totalLiabilities,
                 equityLines,
-                BigDecimal.ZERO,
+                retainedEarnings,
                 netIncomeYtd,
                 totalEquity,
                 totalLiabilitiesAndEquity,
                 balanced
         );
+    }
+
+    private boolean isCurrentAsset(Account a) {
+        String sub = a.getSubType() != null ? a.getSubType().trim().toUpperCase() : "";
+        if ("FIXED_ASSET".equals(sub) || "NON_CURRENT_ASSET".equals(sub)
+                || "INTANGIBLE_ASSET".equals(sub) || "LONG_TERM_ASSET".equals(sub)) {
+            return false;
+        }
+        if ("CURRENT_ASSET".equals(sub) || "BANK".equals(sub) || "CASH".equals(sub)
+                || "RECEIVABLE".equals(sub) || "STOCK".equals(sub)
+                || "INVENTORY".equals(sub) || "TAX".equals(sub) || "PREPAYMENT".equals(sub)) {
+            return true;
+        }
+        String code = a.getCode() != null ? a.getCode() : "";
+        return code.startsWith("10") || code.startsWith("11") || code.startsWith("12")
+                || code.startsWith("13") || code.startsWith("14");
+    }
+
+    private boolean isCurrentLiability(Account a) {
+        String sub = a.getSubType() != null ? a.getSubType().trim().toUpperCase() : "";
+        if ("LONG_TERM_LIABILITY".equals(sub) || "NON_CURRENT_LIABILITY".equals(sub)) {
+            return false;
+        }
+        if ("CURRENT_LIABILITY".equals(sub) || "PAYABLE".equals(sub)
+                || "TAX".equals(sub) || "ACCRUAL".equals(sub)) {
+            return true;
+        }
+        String code = a.getCode() != null ? a.getCode() : "";
+        return code.startsWith("20") || code.startsWith("21") || code.startsWith("22") || code.startsWith("23");
+    }
+
+    private boolean isRetainedEarningsAccount(Account a) {
+        String sub = a.getSubType() != null ? a.getSubType().trim().toUpperCase() : "";
+        String name = a.getName() != null ? a.getName().toLowerCase() : "";
+        return "3200".equals(a.getCode())
+                || "RETAINED_EARNINGS".equals(sub)
+                || name.contains("retained earnings");
     }
 
     @Override
@@ -1167,7 +1242,7 @@ public class ReportServiceImpl implements ReportService {
                 for (ReportLineDto l : bs.equityLines()) {
                     rows.add(new String[]{"Equity", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
                 }
-                rows.add(new String[]{"Equity", "-", "Retained Earnings", fmtAmt(bs.retainedEarnings())});
+                rows.add(new String[]{"Equity", "3200", "Retained Earnings", fmtAmt(bs.retainedEarnings())});
                 rows.add(new String[]{"Equity", "-", "Net Income YTD", fmtAmt(bs.netIncomeYearToDate())});
                 rows.add(new String[]{"TOTAL", "-", "Total Assets", fmtAmt(bs.totalAssets())});
                 rows.add(new String[]{"TOTAL", "-", "Total Liabilities & Equity", fmtAmt(bs.totalLiabilitiesAndEquity())});

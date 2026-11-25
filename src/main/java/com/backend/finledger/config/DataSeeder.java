@@ -369,44 +369,56 @@ public class DataSeeder implements ApplicationRunner {
         if (accountRepository.findByCompanyIdOrderByCodeAsc(company.getId()).isEmpty()) {
             // Top level groups
             Account assets = saveAccount(company.getId(), "1000", "Assets", AccountType.ASSET, null, null, true, NormalBalance.DEBIT, true);
-            Account cashBank = saveAccount(company.getId(), "1100", "Cash & Bank", AccountType.ASSET, "BANK", assets.getId(), true, NormalBalance.DEBIT, true);
-            saveAccount(company.getId(), "1110", "Emirates NBD - Current", AccountType.ASSET, "BANK", cashBank.getId(), false, NormalBalance.DEBIT, false);
-            saveAccount(company.getId(), "1120", "Petty Cash", AccountType.ASSET, "CASH", cashBank.getId(), false, NormalBalance.DEBIT, false);
-            saveAccount(company.getId(), "1200", "Accounts Receivable", AccountType.ASSET, "RECEIVABLE", assets.getId(), false, NormalBalance.DEBIT, true);
-            saveAccount(company.getId(), "1300", "Inventory", AccountType.ASSET, "STOCK", assets.getId(), false, NormalBalance.DEBIT, true);
-            saveAccount(company.getId(), "1400", "VAT Recoverable (Input)", AccountType.ASSET, "TAX", assets.getId(), false, NormalBalance.DEBIT, true);
+            Account cashBank = saveAccount(company.getId(), "1100", "Cash & Bank", AccountType.ASSET, "CURRENT_ASSET", assets.getId(), true, NormalBalance.DEBIT, true);
+            saveAccount(company.getId(), "1110", "Emirates NBD - Current", AccountType.ASSET, "CURRENT_ASSET", cashBank.getId(), false, NormalBalance.DEBIT, false);
+            saveAccount(company.getId(), "1120", "Petty Cash", AccountType.ASSET, "CURRENT_ASSET", cashBank.getId(), false, NormalBalance.DEBIT, false);
+            saveAccount(company.getId(), "1200", "Accounts Receivable", AccountType.ASSET, "CURRENT_ASSET", assets.getId(), false, NormalBalance.DEBIT, true);
+            saveAccount(company.getId(), "1300", "Inventory", AccountType.ASSET, "CURRENT_ASSET", assets.getId(), false, NormalBalance.DEBIT, true);
+            saveAccount(company.getId(), "1400", "VAT Recoverable (Input)", AccountType.ASSET, "CURRENT_ASSET", assets.getId(), false, NormalBalance.DEBIT, true);
 
             Account liabilities = saveAccount(company.getId(), "2000", "Liabilities", AccountType.LIABILITY, null, null, true, NormalBalance.CREDIT, true);
-            saveAccount(company.getId(), "2100", "Accounts Payable", AccountType.LIABILITY, "PAYABLE", liabilities.getId(), false, NormalBalance.CREDIT, true);
-            saveAccount(company.getId(), "2150", "Employee Reimbursements Payable", AccountType.LIABILITY, "PAYABLE", liabilities.getId(), false, NormalBalance.CREDIT, true);
-            saveAccount(company.getId(), "2200", "VAT Payable (Output)", AccountType.LIABILITY, "TAX", liabilities.getId(), false, NormalBalance.CREDIT, true);
-            saveAccount(company.getId(), "2300", "Accrued Expenses", AccountType.LIABILITY, "ACCRUAL", liabilities.getId(), false, NormalBalance.CREDIT, false);
+            saveAccount(company.getId(), "2100", "Accounts Payable", AccountType.LIABILITY, "CURRENT_LIABILITY", liabilities.getId(), false, NormalBalance.CREDIT, true);
+            saveAccount(company.getId(), "2150", "Employee Reimbursements Payable", AccountType.LIABILITY, "CURRENT_LIABILITY", liabilities.getId(), false, NormalBalance.CREDIT, true);
+            saveAccount(company.getId(), "2200", "VAT Payable (Output)", AccountType.LIABILITY, "CURRENT_LIABILITY", liabilities.getId(), false, NormalBalance.CREDIT, true);
+            saveAccount(company.getId(), "2300", "Accrued Expenses", AccountType.LIABILITY, "CURRENT_LIABILITY", liabilities.getId(), false, NormalBalance.CREDIT, false);
 
             Account equity = saveAccount(company.getId(), "3000", "Equity", AccountType.EQUITY, null, null, true, NormalBalance.CREDIT, true);
             saveAccount(company.getId(), "3100", "Owner's Capital", AccountType.EQUITY, "EQUITY", equity.getId(), false, NormalBalance.CREDIT, false);
             saveAccount(company.getId(), "3200", "Retained Earnings", AccountType.EQUITY, "EQUITY", equity.getId(), false, NormalBalance.CREDIT, true);
 
             Account revenue = saveAccount(company.getId(), "4000", "Revenue", AccountType.INCOME, null, null, true, NormalBalance.CREDIT, true);
-            saveAccount(company.getId(), "4100", "Product Sales", AccountType.INCOME, "SALES", revenue.getId(), false, NormalBalance.CREDIT, false);
-            saveAccount(company.getId(), "4200", "Service Income", AccountType.INCOME, "SERVICE", revenue.getId(), false, NormalBalance.CREDIT, false);
+            saveAccount(company.getId(), "4100", "Product Sales", AccountType.INCOME, "REVENUE", revenue.getId(), false, NormalBalance.CREDIT, false);
+            saveAccount(company.getId(), "4200", "Service Income", AccountType.INCOME, "REVENUE", revenue.getId(), false, NormalBalance.CREDIT, false);
+            saveAccount(company.getId(), "4900", "Realized Foreign Exchange Gain", AccountType.INCOME, "OTHER_INCOME", revenue.getId(), false, NormalBalance.CREDIT, true);
 
             Account expenses = saveAccount(company.getId(), "5000", "Expenses", AccountType.EXPENSE, null, null, true, NormalBalance.DEBIT, true);
             saveAccount(company.getId(), "5100", "Cost of Goods Sold", AccountType.EXPENSE, "COGS", expenses.getId(), false, NormalBalance.DEBIT, true);
-            saveAccount(company.getId(), "5150", "Inventory Adjustments", AccountType.EXPENSE, "ADJUSTMENT", expenses.getId(), false, NormalBalance.DEBIT, false);
-            saveAccount(company.getId(), "5200", "Salaries & Wages", AccountType.EXPENSE, "PAYROLL", expenses.getId(), false, NormalBalance.DEBIT, false);
-            saveAccount(company.getId(), "5210", "Rent Expense", AccountType.EXPENSE, "RENT", expenses.getId(), false, NormalBalance.DEBIT, false);
-            saveAccount(company.getId(), "6100", "Travel & Operating Expenses", AccountType.EXPENSE, "EXPENSE", expenses.getId(), false, NormalBalance.DEBIT, false);
+            saveAccount(company.getId(), "5150", "Inventory Adjustments", AccountType.EXPENSE, "COGS", expenses.getId(), false, NormalBalance.DEBIT, false);
+            saveAccount(company.getId(), "5200", "Salaries & Wages", AccountType.EXPENSE, "OPERATING_EXPENSE", expenses.getId(), false, NormalBalance.DEBIT, false);
+            saveAccount(company.getId(), "5210", "Rent Expense", AccountType.EXPENSE, "OPERATING_EXPENSE", expenses.getId(), false, NormalBalance.DEBIT, false);
+            saveAccount(company.getId(), "6100", "Travel & Operating Expenses", AccountType.EXPENSE, "OPERATING_EXPENSE", expenses.getId(), false, NormalBalance.DEBIT, false);
+            saveAccount(company.getId(), "6200", "Realized Foreign Exchange Loss", AccountType.EXPENSE, "OPERATING_EXPENSE", expenses.getId(), false, NormalBalance.DEBIT, true);
         } else {
             // Ensure newer required accounts exist on upgraded schemas
             accountRepository.findByCompanyIdAndCode(company.getId(), "1400").orElseGet(() -> {
                 Account assets = accountRepository.findByCompanyIdAndCode(company.getId(), "1000").orElse(null);
-                return saveAccount(company.getId(), "1400", "VAT Recoverable (Input)", AccountType.ASSET, "TAX",
+                return saveAccount(company.getId(), "1400", "VAT Recoverable (Input)", AccountType.ASSET, "CURRENT_ASSET",
                         assets != null ? assets.getId() : null, false, NormalBalance.DEBIT, true);
+            });
+            accountRepository.findByCompanyIdAndCode(company.getId(), "4900").orElseGet(() -> {
+                Account revenue = accountRepository.findByCompanyIdAndCode(company.getId(), "4000").orElse(null);
+                return saveAccount(company.getId(), "4900", "Realized Foreign Exchange Gain", AccountType.INCOME, "OTHER_INCOME",
+                        revenue != null ? revenue.getId() : null, false, NormalBalance.CREDIT, true);
             });
             accountRepository.findByCompanyIdAndCode(company.getId(), "6100").orElseGet(() -> {
                 Account expenses = accountRepository.findByCompanyIdAndCode(company.getId(), "5000").orElse(null);
-                return saveAccount(company.getId(), "6100", "Travel & Operating Expenses", AccountType.EXPENSE, "EXPENSE",
+                return saveAccount(company.getId(), "6100", "Travel & Operating Expenses", AccountType.EXPENSE, "OPERATING_EXPENSE",
                         expenses != null ? expenses.getId() : null, false, NormalBalance.DEBIT, false);
+            });
+            accountRepository.findByCompanyIdAndCode(company.getId(), "6200").orElseGet(() -> {
+                Account expenses = accountRepository.findByCompanyIdAndCode(company.getId(), "5000").orElse(null);
+                return saveAccount(company.getId(), "6200", "Realized Foreign Exchange Loss", AccountType.EXPENSE, "OPERATING_EXPENSE",
+                        expenses != null ? expenses.getId() : null, false, NormalBalance.DEBIT, true);
             });
         }
     }

@@ -4,6 +4,9 @@ import com.backend.finledger.audit.entity.AuditAction;
 import com.backend.finledger.audit.entity.AuditLog;
 import com.backend.finledger.audit.repository.AuditLogRepository;
 import com.backend.finledger.common.ApplicationContextProvider;
+import com.backend.finledger.company.entity.Company;
+import com.backend.finledger.security.CurrentUser;
+import com.backend.finledger.security.UserPrincipal;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,6 +17,8 @@ import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
+import jakarta.persistence.Persistence;
+import jakarta.persistence.PersistenceUtil;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.PostRemove;
@@ -169,14 +174,15 @@ public class AuditEntityListener {
             entityId = 0L;
         }
 
+        String entityName = entity.getClass().getSimpleName();
         Long companyId = extractCompanyId(entity);
         if (companyId == null) {
-            companyId = 1L; // fallback default tenant
+            log.warn("Skipping audit log for {} (id={}): unable to determine tenant companyId", entityName, entityId);
+            return;
         }
 
         Long userId = resolveCurrentUserId();
         String ipAddress = resolveClientIp();
-        String entityName = entity.getClass().getSimpleName();
 
         saveAuditLog(companyId, userId, entityName, entityId, action, oldJson, newJson, ipAddress);
     }
@@ -278,7 +284,105 @@ public class AuditEntityListener {
     }
 
     private Long extractCompanyId(Object entity) {
-        return extractLongProperty(entity, "companyId", "getCompanyId");
+        if (entity == null) {
+            return null;
+        }
+
+        Long directCompanyId = extractLongProperty(entity, "companyId", "getCompanyId");
+        if (directCompanyId != null) {
+            return directCompanyId;
+        }
+
+        if (entity instanceof Company) {
+            return extractId(entity);
+        }
+
+        // Resolve tenant via parent entity associations for child entities
+        String[] parentGetters = {
+                "getInvoice",
+                "getBill",
+                "getJournalEntry",
+                "getReceipt",
+                "getPayment",
+                "getQuotation",
+                "getExpense",
+                "getAdjustment",
+                "getTransfer",
+                "getFiscalYear",
+                "getBankStatement",
+                "getBankAccount",
+                "getItem",
+                "getWarehouse"
+        };
+
+        PersistenceUtil persistenceUtil = Persistence.getPersistenceUtil();
+        for (String getter : parentGetters) {
+            Object parent = invokeGetterSafely(entity, getter, persistenceUtil);
+            if (parent != null) {
+                Long parentCompanyId = extractCompanyId(parent);
+                if (parentCompanyId != null) {
+                    return parentCompanyId;
+                }
+            }
+        }
+
+        // Resolve via parent FK column when lazy parent association is not loaded or not mapped
+        Long fiscalYearId = extractLongProperty(entity, "fiscalYearId", "getFiscalYearId");
+        if (fiscalYearId != null) {
+            Long cid = resolveCompanyIdViaJdbc("SELECT company_id FROM fiscal_years WHERE id = ?", fiscalYearId);
+            if (cid != null) {
+                return cid;
+            }
+        }
+
+        Long bankAccountId = extractLongProperty(entity, "bankAccountId", "getBankAccountId");
+        if (bankAccountId != null) {
+            Long cid = resolveCompanyIdViaJdbc("SELECT company_id FROM bank_accounts WHERE id = ?", bankAccountId);
+            if (cid != null) {
+                return cid;
+            }
+        }
+
+        Long itemId = extractLongProperty(entity, "itemId", "getItemId");
+        if (itemId != null) {
+            Long cid = resolveCompanyIdViaJdbc("SELECT company_id FROM items WHERE id = ?", itemId);
+            if (cid != null) {
+                return cid;
+            }
+        }
+
+        Long warehouseId = extractLongProperty(entity, "warehouseId", "getWarehouseId");
+        if (warehouseId != null) {
+            Long cid = resolveCompanyIdViaJdbc("SELECT company_id FROM warehouses WHERE id = ?", warehouseId);
+            if (cid != null) {
+                return cid;
+            }
+        }
+
+        return CurrentUser.getPrincipal().map(UserPrincipal::getCompanyId).orElse(null);
+    }
+
+    private Object invokeGetterSafely(Object target, String methodName, PersistenceUtil persistenceUtil) {
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            Object res = method.invoke(target);
+            if (res != null && persistenceUtil.isLoaded(res)) {
+                return res;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private Long resolveCompanyIdViaJdbc(String sql, Long foreignKeyId) {
+        try {
+            JdbcTemplate jdbcTemplate = ApplicationContextProvider.getBean(JdbcTemplate.class);
+            if (jdbcTemplate != null) {
+                return jdbcTemplate.queryForObject(sql, Long.class, foreignKeyId);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private Long extractLongProperty(Object entity, String fieldName, String methodName) {

@@ -8,8 +8,14 @@ import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
+import com.backend.finledger.currency.entity.ExchangeRate;
+import com.backend.finledger.currency.repository.ExchangeRateRepository;
+import com.backend.finledger.ledger.entity.Account;
+import com.backend.finledger.ledger.entity.AccountType;
 import com.backend.finledger.ledger.entity.JournalSourceType;
 import com.backend.finledger.ledger.entity.PartyType;
+import com.backend.finledger.ledger.repository.AccountRepository;
+import com.backend.finledger.ledger.repository.JournalLineRepository;
 import com.backend.finledger.ledger.service.PostingService;
 import com.backend.finledger.ledger.dto.JournalEntryDto;
 import com.backend.finledger.ledger.dto.JournalLineRequest;
@@ -28,6 +34,7 @@ import com.backend.finledger.sales.repository.InvoiceRepository;
 import com.backend.finledger.sales.repository.ReceiptRepository;
 import com.backend.finledger.sales.service.ReceiptService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -49,6 +56,9 @@ public class ReceiptServiceImpl implements ReceiptService {
     private final PostingService postingService;
     private final NumberSeriesService numberSeriesService;
     private final SalesMapper salesMapper;
+    private final AccountRepository accountRepository;
+    private final JournalLineRepository journalLineRepository;
+    private final ExchangeRateRepository exchangeRateRepository;
 
     public ReceiptServiceImpl(ReceiptRepository receiptRepository,
                               CustomerRepository customerRepository,
@@ -58,6 +68,22 @@ public class ReceiptServiceImpl implements ReceiptService {
                               PostingService postingService,
                               NumberSeriesService numberSeriesService,
                               SalesMapper salesMapper) {
+        this(receiptRepository, customerRepository, invoiceRepository, bankAccountRepository,
+                companyRepository, postingService, numberSeriesService, salesMapper, null, null, null);
+    }
+
+    @Autowired
+    public ReceiptServiceImpl(ReceiptRepository receiptRepository,
+                              CustomerRepository customerRepository,
+                              InvoiceRepository invoiceRepository,
+                              BankAccountRepository bankAccountRepository,
+                              CompanyRepository companyRepository,
+                              PostingService postingService,
+                              NumberSeriesService numberSeriesService,
+                              SalesMapper salesMapper,
+                              AccountRepository accountRepository,
+                              JournalLineRepository journalLineRepository,
+                              ExchangeRateRepository exchangeRateRepository) {
         this.receiptRepository = receiptRepository;
         this.customerRepository = customerRepository;
         this.invoiceRepository = invoiceRepository;
@@ -66,6 +92,9 @@ public class ReceiptServiceImpl implements ReceiptService {
         this.postingService = postingService;
         this.numberSeriesService = numberSeriesService;
         this.salesMapper = salesMapper;
+        this.accountRepository = accountRepository;
+        this.journalLineRepository = journalLineRepository;
+        this.exchangeRateRepository = exchangeRateRepository;
     }
 
     @Override
@@ -91,6 +120,8 @@ public class ReceiptServiceImpl implements ReceiptService {
         if (currency == null) {
             currency = company.getBaseCurrency();
         }
+        BigDecimal exchangeRate = resolveExchangeRate(companyId, currency, company.getBaseCurrency(),
+                request.receiptDate(), request.exchangeRate());
 
         Receipt receipt = new Receipt();
         receipt.setCompanyId(companyId);
@@ -100,9 +131,11 @@ public class ReceiptServiceImpl implements ReceiptService {
         receipt.setPaymentMethod(request.paymentMethod());
         receipt.setReference(request.reference());
         receipt.setCurrencyCode(currency);
+        receipt.setExchangeRate(exchangeRate);
         receipt.setAmount(request.amount().setScale(2, RoundingMode.HALF_UP));
 
         BigDecimal totalAllocated = BigDecimal.ZERO;
+        BigDecimal arAllocatedBase = BigDecimal.ZERO;
         Set<Long> seenInvoiceIds = new HashSet<>();
 
         if (request.allocations() != null && !request.allocations().isEmpty()) {
@@ -131,6 +164,13 @@ public class ReceiptServiceImpl implements ReceiptService {
                 }
 
                 totalAllocated = totalAllocated.add(allocAmount);
+                BigDecimal invRate = invoice.getCurrencyCode() != null
+                        && invoice.getCurrencyCode().equalsIgnoreCase(currency)
+                        && invoice.getExchangeRate() != null
+                        && invoice.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                        ? invoice.getExchangeRate()
+                        : exchangeRate;
+                arAllocatedBase = arAllocatedBase.add(allocAmount.multiply(invRate).setScale(2, RoundingMode.HALF_UP));
 
                 BigDecimal newPaid = invoice.getAmountPaid().add(allocAmount).setScale(2, RoundingMode.HALF_UP);
                 BigDecimal newDue = invoice.getBalanceDue().subtract(allocAmount).setScale(2, RoundingMode.HALF_UP);
@@ -163,26 +203,65 @@ public class ReceiptServiceImpl implements ReceiptService {
         receipt.setStatus(ReceiptStatus.POSTED);
         receipt = receiptRepository.save(receipt);
 
-        List<JournalLineRequest> journalLines = List.of(
-                new JournalLineRequest(
-                        bankAccount.getGlAccountId(),
-                        null,
-                        "Receipt #" + receipt.getReceiptNo() + " via " + receipt.getPaymentMethod(),
-                        receipt.getAmount(),
-                        BigDecimal.ZERO,
-                        null,
-                        null
-                ),
-                new JournalLineRequest(
-                        customer.getArAccountId(),
-                        null,
-                        "Receipt #" + receipt.getReceiptNo() + " - " + customer.getName(),
-                        BigDecimal.ZERO,
-                        receipt.getAmount(),
-                        PartyType.CUSTOMER,
-                        customer.getId()
-                )
-        );
+        BigDecimal bankBaseDebit = receipt.getAmount().multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal arBaseCredit = arAllocatedBase
+                .add(unapplied.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP))
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal fxDiff = bankBaseDebit.subtract(arBaseCredit).setScale(2, RoundingMode.HALF_UP);
+
+        List<JournalLineRequest> journalLines = new ArrayList<>();
+        journalLines.add(new JournalLineRequest(
+                bankAccount.getGlAccountId(),
+                null,
+                "Receipt #" + receipt.getReceiptNo() + " via " + receipt.getPaymentMethod(),
+                receipt.getAmount(),
+                BigDecimal.ZERO,
+                null,
+                null,
+                bankBaseDebit,
+                BigDecimal.ZERO
+        ));
+        journalLines.add(new JournalLineRequest(
+                customer.getArAccountId(),
+                null,
+                "Receipt #" + receipt.getReceiptNo() + " - " + customer.getName(),
+                BigDecimal.ZERO,
+                receipt.getAmount(),
+                PartyType.CUSTOMER,
+                customer.getId(),
+                BigDecimal.ZERO,
+                arBaseCredit
+        ));
+
+        if (fxDiff.compareTo(BigDecimal.ZERO) > 0) {
+            // Bank received more base currency than original AR -> Realized FX Gain
+            Long fxGainAccountId = resolveFxAccountId(companyId, true);
+            journalLines.add(new JournalLineRequest(
+                    fxGainAccountId,
+                    null,
+                    "Realized FX Gain on Receipt #" + receipt.getReceiptNo(),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    fxDiff
+            ));
+        } else if (fxDiff.compareTo(BigDecimal.ZERO) < 0) {
+            // Bank received less base currency than original AR -> Realized FX Loss
+            Long fxLossAccountId = resolveFxAccountId(companyId, false);
+            journalLines.add(new JournalLineRequest(
+                    fxLossAccountId,
+                    null,
+                    "Realized FX Loss on Receipt #" + receipt.getReceiptNo(),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    null,
+                    null,
+                    fxDiff.abs(),
+                    BigDecimal.ZERO
+            ));
+        }
 
         SourceDocumentPostingRequest postingRequest = new SourceDocumentPostingRequest(
                 JournalSourceType.RECEIPT,
@@ -191,7 +270,7 @@ public class ReceiptServiceImpl implements ReceiptService {
                 receipt.getReceiptNo(),
                 "Customer Receipt " + receipt.getReceiptNo() + " - " + customer.getName(),
                 receipt.getCurrencyCode(),
-                BigDecimal.ONE,
+                receipt.getExchangeRate(),
                 journalLines
         );
 
@@ -213,6 +292,12 @@ public class ReceiptServiceImpl implements ReceiptService {
 
         if (receipt.getStatus() == ReceiptStatus.VOID) {
             throw new BusinessException("ALREADY_VOID", "Receipt is already void");
+        }
+
+        if (receipt.getJournalEntryId() != null && journalLineRepository != null
+                && journalLineRepository.countReconciledLinesByJournalEntryId(companyId, receipt.getJournalEntryId()) > 0) {
+            throw new BusinessException("RECEIPT_RECONCILED",
+                    "Cannot void receipt " + receipt.getReceiptNo() + " because its journal entry is bank-reconciled. Unmatch in Bank Reconciliation first.");
         }
 
         for (ReceiptAllocation alloc : receipt.getAllocations()) {
@@ -287,7 +372,7 @@ public class ReceiptServiceImpl implements ReceiptService {
 
         List<ReceiptAllocationDto> allocationDtos = new ArrayList<>();
         for (ReceiptAllocation alloc : receipt.getAllocations()) {
-            Invoice inv = invoiceRepository.findById(alloc.getInvoiceId()).orElse(null);
+            Invoice inv = invoiceRepository.findByCompanyIdAndId(receipt.getCompanyId(), alloc.getInvoiceId()).orElse(null);
             String invNo = inv != null ? inv.getInvoiceNo() : null;
             allocationDtos.add(new ReceiptAllocationDto(alloc.getId(), alloc.getInvoiceId(), invNo, alloc.getAmount()));
         }
@@ -309,8 +394,55 @@ public class ReceiptServiceImpl implements ReceiptService {
                 dto.unappliedAmount(),
                 dto.status(),
                 dto.journalEntryId(),
-                allocationDtos
+                allocationDtos,
+                receipt.getExchangeRate() != null ? receipt.getExchangeRate() : BigDecimal.ONE
         );
+    }
+
+    private BigDecimal resolveExchangeRate(Long companyId, String currency, String baseCurrency,
+                                             java.time.LocalDate txnDate, BigDecimal requestedRate) {
+        if (requestedRate != null && requestedRate.compareTo(BigDecimal.ZERO) > 0) {
+            return requestedRate.setScale(6, RoundingMode.HALF_UP);
+        }
+        if (currency == null || baseCurrency == null || currency.equalsIgnoreCase(baseCurrency)) {
+            return BigDecimal.ONE.setScale(6, RoundingMode.HALF_UP);
+        }
+        if (exchangeRateRepository != null) {
+            return exchangeRateRepository
+                    .findFirstByCompanyIdAndFromCurrencyAndToCurrencyAndRateDateLessThanEqualOrderByRateDateDesc(
+                            companyId, currency, baseCurrency, txnDate)
+                    .map(ExchangeRate::getRate)
+                    .map(r -> r.setScale(6, RoundingMode.HALF_UP))
+                    .orElse(BigDecimal.ONE.setScale(6, RoundingMode.HALF_UP));
+        }
+        return BigDecimal.ONE.setScale(6, RoundingMode.HALF_UP);
+    }
+
+    private Long resolveFxAccountId(Long companyId, boolean gain) {
+        if (accountRepository == null) {
+            throw new BusinessException("FX_ACCOUNT_NOT_FOUND", "Account repository unavailable to resolve FX gain/loss account");
+        }
+        String preferredCode = gain ? "4900" : "6200";
+        Optional<Account> byCode = accountRepository.findByCompanyIdAndCode(companyId, preferredCode);
+        if (byCode.isPresent() && !Boolean.TRUE.equals(byCode.get().getIsGroup()) && Boolean.TRUE.equals(byCode.get().getIsActive())) {
+            return byCode.get().getId();
+        }
+        AccountType targetType = gain ? AccountType.INCOME : AccountType.EXPENSE;
+        List<Account> companyAccounts = accountRepository.findByCompanyIdOrderByCodeAsc(companyId);
+        return companyAccounts.stream()
+                .filter(a -> a.getAccountType() == targetType && !Boolean.TRUE.equals(a.getIsGroup()) && Boolean.TRUE.equals(a.getIsActive()))
+                .filter(a -> {
+                    String n = a.getName() != null ? a.getName().toLowerCase() : "";
+                    return n.contains("foreign exchange") || n.contains("fx");
+                })
+                .map(Account::getId)
+                .findFirst()
+                .orElseGet(() -> companyAccounts.stream()
+                        .filter(a -> a.getAccountType() == targetType && !Boolean.TRUE.equals(a.getIsGroup()) && Boolean.TRUE.equals(a.getIsActive()))
+                        .map(Account::getId)
+                        .findFirst()
+                        .orElseThrow(() -> new BusinessException("FX_ACCOUNT_NOT_FOUND",
+                                "No active " + (gain ? "FX Gain (INCOME)" : "FX Loss (EXPENSE)") + " account found for company: " + companyId)));
     }
 }
 

@@ -30,6 +30,20 @@ public record ReceiptRequest(
         BigDecimal amount,
 
         @Valid
-        List<ReceiptAllocationRequest> allocations
-) {}
+        List<ReceiptAllocationRequest> allocations,
+
+        BigDecimal exchangeRate
+) {
+    public ReceiptRequest(
+            Long customerId,
+            LocalDate receiptDate,
+            Long bankAccountId,
+            PaymentMethod paymentMethod,
+            String reference,
+            String currencyCode,
+            BigDecimal amount,
+            List<ReceiptAllocationRequest> allocations) {
+        this(customerId, receiptDate, bankAccountId, paymentMethod, reference, currencyCode, amount, allocations, null);
+    }
+}
 
