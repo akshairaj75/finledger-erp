@@ -1,10 +1,15 @@
 package com.backend.finledger.sales.service.impl;
 
+import com.backend.finledger.attachment.service.FileStorageService;
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
 import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
+import com.backend.finledger.common.pdf.FinLedgerPdfTheme;
+import com.backend.finledger.common.pdf.PdfBillingHelper;
+import com.backend.finledger.common.pdf.PdfBrandingHeaderBuilder;
+import com.backend.finledger.common.pdf.PdfCellRenderers;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.ledger.entity.*;
@@ -38,22 +43,16 @@ import com.backend.finledger.tax.repository.TaxRateRepository;
 import com.backend.finledger.tax.service.TaxCalculator;
 import com.lowagie.text.Document;
 import com.lowagie.text.Element;
-import com.lowagie.text.Font;
-import com.lowagie.text.FontFactory;
 import com.lowagie.text.PageSize;
-import com.lowagie.text.Paragraph;
-import com.lowagie.text.Phrase;
-import com.lowagie.text.Rectangle;
-import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -83,6 +82,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final WarehouseRepository warehouseRepository;
     private final StockService stockService;
     private final MailService mailService;
+    private final FileStorageService fileStorageService;
 
     public InvoiceServiceImpl(InvoiceRepository invoiceRepository,
                               CustomerRepository customerRepository,
@@ -97,6 +97,26 @@ public class InvoiceServiceImpl implements InvoiceService {
                               WarehouseRepository warehouseRepository,
                               StockService stockService,
                               MailService mailService) {
+        this(invoiceRepository, customerRepository, taxRateRepository, accountRepository,
+                companyRepository, postingService, numberSeriesService, taxCalculator,
+                salesMapper, itemRepository, warehouseRepository, stockService, mailService, null);
+    }
+
+    @Autowired
+    public InvoiceServiceImpl(InvoiceRepository invoiceRepository,
+                              CustomerRepository customerRepository,
+                              TaxRateRepository taxRateRepository,
+                              AccountRepository accountRepository,
+                              CompanyRepository companyRepository,
+                              PostingService postingService,
+                              NumberSeriesService numberSeriesService,
+                              TaxCalculator taxCalculator,
+                              SalesMapper salesMapper,
+                              ItemRepository itemRepository,
+                              WarehouseRepository warehouseRepository,
+                              StockService stockService,
+                              MailService mailService,
+                              FileStorageService fileStorageService) {
         this.invoiceRepository = invoiceRepository;
         this.customerRepository = customerRepository;
         this.taxRateRepository = taxRateRepository;
@@ -110,6 +130,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         this.warehouseRepository = warehouseRepository;
         this.stockService = stockService;
         this.mailService = mailService;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
@@ -560,143 +581,89 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .orElseThrow(() -> new BusinessException("COMPANY_NOT_FOUND", "Company not found"));
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            Document document = new Document(PageSize.A4, 36, 36, 40, 40);
-            PdfWriter.getInstance(document, baos);
+            Document document = new Document(PageSize.A4, 36, 36, 36, 46);
+            PdfWriter writer = PdfWriter.getInstance(document, baos);
+            String docTitle = (invoice.getDocType() == InvoiceDocType.INVOICE) ? "TAX INVOICE" : "CREDIT NOTE";
+            writer.setPageEvent(new PdfCellRenderers.FinLedgerPageFooterEvent(
+                    company.getLegalName(), docTitle + " #" + invoice.getInvoiceNo()));
             document.open();
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20, new Color(15, 23, 42));
-            Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, new Color(51, 65, 85));
-            Font regularFont = FontFactory.getFont(FontFactory.HELVETICA, 10, new Color(51, 65, 85));
-            Font boldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(15, 23, 42));
+            PdfBrandingHeaderBuilder.addDocumentHeader(
+                    document,
+                    company,
+                    fileStorageService,
+                    docTitle,
+                    "# " + invoice.getInvoiceNo(),
+                    invoice.getStatus().name()
+            );
 
-            String docTitle = (invoice.getDocType() == InvoiceDocType.INVOICE) ? "TAX INVOICE" : "CREDIT NOTE";
-            Paragraph title = new Paragraph(docTitle, titleFont);
-            title.setAlignment(Element.ALIGN_RIGHT);
-            document.add(title);
-
-            Paragraph docNo = new Paragraph("# " + invoice.getInvoiceNo(), subTitleFont);
-            docNo.setAlignment(Element.ALIGN_RIGHT);
-            document.add(docNo);
-
-            document.add(new Paragraph(" "));
-
-            PdfPTable headerTable = new PdfPTable(2);
-            headerTable.setWidthPercentage(100);
-            headerTable.setWidths(new float[]{60, 40});
-
-            PdfPCell leftCell = new PdfPCell();
-            leftCell.setBorder(Rectangle.NO_BORDER);
-            leftCell.addElement(new Paragraph(company.getLegalName(), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, Color.BLACK)));
-            if (company.getTrn() != null) {
-                leftCell.addElement(new Paragraph("TRN / Tax ID: " + company.getTrn(), regularFont));
-            }
-            if (company.getAddress() != null) {
-                leftCell.addElement(new Paragraph(company.getAddress(), regularFont));
-            }
-            if (company.getEmail() != null) {
-                leftCell.addElement(new Paragraph("Email: " + company.getEmail(), regularFont));
-            }
-            headerTable.addCell(leftCell);
-
-            PdfPCell rightCell = new PdfPCell();
-            rightCell.setBorder(Rectangle.NO_BORDER);
-            rightCell.addElement(new Paragraph("Date: " + invoice.getInvoiceDate().format(DateTimeFormatter.ISO_DATE), regularFont));
-            rightCell.addElement(new Paragraph("Due Date: " + invoice.getDueDate().format(DateTimeFormatter.ISO_DATE), regularFont));
-            rightCell.addElement(new Paragraph("Currency: " + invoice.getCurrencyCode(), regularFont));
-            rightCell.addElement(new Paragraph("Status: " + invoice.getStatus(), boldFont));
-            headerTable.addCell(rightCell);
-
-            document.add(headerTable);
-            document.add(new Paragraph(" "));
-
-            Paragraph billToHeader = new Paragraph("BILL TO:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, new Color(71, 85, 105)));
-            document.add(billToHeader);
-            document.add(new Paragraph(customer.getName() + " (" + customer.getCode() + ")", boldFont));
+            List<String[]> billToRows = new ArrayList<>();
+            billToRows.add(new String[]{null, customer.getName() + " (" + customer.getCode() + ")"});
             if (customer.getTrn() != null && !customer.getTrn().isBlank()) {
-                document.add(new Paragraph("TRN: " + customer.getTrn(), regularFont));
+                billToRows.add(new String[]{"TRN", customer.getTrn()});
             }
             if (customer.getBillingAddress() != null && !customer.getBillingAddress().isBlank()) {
-                document.add(new Paragraph(customer.getBillingAddress(), regularFont));
+                billToRows.add(new String[]{customer.getBillingAddress()});
             }
             if (customer.getEmail() != null && !customer.getEmail().isBlank()) {
-                document.add(new Paragraph("Email: " + customer.getEmail(), regularFont));
+                billToRows.add(new String[]{"Email", customer.getEmail()});
+            }
+            if (customer.getPhone() != null && !customer.getPhone().isBlank()) {
+                billToRows.add(new String[]{"Phone", customer.getPhone()});
             }
 
-            document.add(new Paragraph(" "));
+            List<String[]> metaRows = List.of(
+                    new String[]{"Invoice Date", invoice.getInvoiceDate().format(DateTimeFormatter.ISO_DATE)},
+                    new String[]{"Due Date", invoice.getDueDate().format(DateTimeFormatter.ISO_DATE)},
+                    new String[]{"Currency", invoice.getCurrencyCode()},
+                    new String[]{"Balance Due", FinLedgerPdfTheme.fmtMoney(invoice.getBalanceDue()) + " " + invoice.getCurrencyCode()}
+            );
+            PdfBillingHelper.addTwoColumnMetaCards(document, "BILL TO", billToRows, "INVOICE DETAILS", metaRows);
 
-            PdfPTable table = new PdfPTable(6);
+            PdfPTable table = new PdfPTable(7);
             table.setWidthPercentage(100);
-            table.setWidths(new float[]{8, 42, 12, 14, 10, 14});
+            table.setWidths(new float[]{6f, 36f, 9f, 13f, 9f, 12f, 15f});
+            table.setHeaderRows(1);
 
-            String[] headers = {"#", "Description", "Qty", "Unit Price", "Tax", "Total"};
-            for (String h : headers) {
-                PdfPCell cell = new PdfPCell(new Phrase(h, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE)));
-                cell.setBackgroundColor(new Color(30, 41, 59));
-                cell.setPadding(6);
-                cell.setHorizontalAlignment(Element.ALIGN_CENTER);
-                table.addCell(cell);
-            }
+            PdfBillingHelper.addLineTableHeaders(
+                    table,
+                    new String[]{"#", "Description", "Qty", "Unit Price", "Disc %", "VAT", "Total (" + invoice.getCurrencyCode() + ")"},
+                    new int[]{Element.ALIGN_CENTER, Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT}
+            );
 
             for (InvoiceLine line : invoice.getLines()) {
-                table.addCell(createTableCell(String.valueOf(line.getLineNo()), Element.ALIGN_CENTER, regularFont));
-                table.addCell(createTableCell(line.getDescription(), Element.ALIGN_LEFT, regularFont));
-                table.addCell(createTableCell(line.getQuantity().stripTrailingZeros().toPlainString(), Element.ALIGN_RIGHT, regularFont));
-                table.addCell(createTableCell(line.getUnitPrice().toString(), Element.ALIGN_RIGHT, regularFont));
-                table.addCell(createTableCell(line.getTaxAmount().toString(), Element.ALIGN_RIGHT, regularFont));
-                table.addCell(createTableCell(line.getLineTotal().toString(), Element.ALIGN_RIGHT, regularFont));
+                table.addCell(PdfBillingHelper.lineBodyCell(String.valueOf(line.getLineNo()), FinLedgerPdfTheme.FONT_META, Element.ALIGN_CENTER));
+                table.addCell(PdfBillingHelper.lineBodyCell(line.getDescription(), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_LEFT));
+                table.addCell(PdfBillingHelper.lineBodyCell(FinLedgerPdfTheme.fmtQty(line.getQuantity()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(FinLedgerPdfTheme.fmtMoney(line.getUnitPrice()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(
+                        line.getDiscountPct() != null && line.getDiscountPct().compareTo(BigDecimal.ZERO) > 0
+                                ? FinLedgerPdfTheme.fmtQty(line.getDiscountPct()) + "%" : "-",
+                        FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(FinLedgerPdfTheme.fmtMoney(line.getTaxAmount()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(FinLedgerPdfTheme.fmtMoney(line.getLineTotal()), FinLedgerPdfTheme.FONT_BODY_BOLD, Element.ALIGN_RIGHT));
             }
-
             document.add(table);
-            document.add(new Paragraph(" "));
 
-            PdfPTable totalsTable = new PdfPTable(2);
-            totalsTable.setWidthPercentage(40);
-            totalsTable.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            totalsTable.setWidths(new float[]{50, 50});
-
-            addTotalRow(totalsTable, "Subtotal:", invoice.getSubtotal().toString(), regularFont);
-            if (invoice.getDiscountTotal().compareTo(BigDecimal.ZERO) > 0) {
-                addTotalRow(totalsTable, "Discount:", "-" + invoice.getDiscountTotal().toString(), regularFont);
+            String ccy = invoice.getCurrencyCode();
+            List<PdfBillingHelper.TotalsRow> totalRows = new ArrayList<>();
+            totalRows.add(new PdfBillingHelper.TotalsRow("Subtotal (Net)", FinLedgerPdfTheme.fmtMoney(invoice.getSubtotal()) + " " + ccy, false, false));
+            if (invoice.getDiscountTotal() != null && invoice.getDiscountTotal().compareTo(BigDecimal.ZERO) > 0) {
+                totalRows.add(new PdfBillingHelper.TotalsRow("Discount", "-" + FinLedgerPdfTheme.fmtMoney(invoice.getDiscountTotal()) + " " + ccy, false, false));
             }
-            addTotalRow(totalsTable, "VAT Total:", invoice.getTaxTotal().toString(), regularFont);
-            addTotalRow(totalsTable, "Grand Total:", invoice.getTotal().toString() + " " + invoice.getCurrencyCode(), boldFont);
-            addTotalRow(totalsTable, "Amount Paid:", invoice.getAmountPaid().toString(), regularFont);
-            addTotalRow(totalsTable, "Balance Due:", invoice.getBalanceDue().toString() + " " + invoice.getCurrencyCode(), boldFont);
+            totalRows.add(new PdfBillingHelper.TotalsRow("VAT Total", FinLedgerPdfTheme.fmtMoney(invoice.getTaxTotal()) + " " + ccy, false, false));
+            totalRows.add(new PdfBillingHelper.TotalsRow("Grand Total", FinLedgerPdfTheme.fmtMoney(invoice.getTotal()) + " " + ccy, true, true));
+            totalRows.add(new PdfBillingHelper.TotalsRow("Amount Paid", FinLedgerPdfTheme.fmtMoney(invoice.getAmountPaid()) + " " + ccy, false, false));
+            totalRows.add(new PdfBillingHelper.TotalsRow("Balance Due", FinLedgerPdfTheme.fmtMoney(invoice.getBalanceDue()) + " " + ccy, true, true));
+            PdfBillingHelper.addTotalsCard(document, totalRows);
 
-            document.add(totalsTable);
-
-            if (invoice.getNotes() != null && !invoice.getNotes().isBlank()) {
-                document.add(new Paragraph(" "));
-                document.add(new Paragraph("Notes & Terms:", boldFont));
-                document.add(new Paragraph(invoice.getNotes(), regularFont));
-            }
+            PdfBillingHelper.addNotesBox(document, "NOTES & TERMS", invoice.getNotes());
 
             document.close();
             return baos.toByteArray();
         } catch (Exception ex) {
             throw new BusinessException("PDF_GENERATION_FAILED", "Failed to generate invoice PDF: " + ex.getMessage());
         }
-    }
-
-    private PdfPCell createTableCell(String text, int alignment, Font font) {
-        PdfPCell cell = new PdfPCell(new Phrase(text, font));
-        cell.setPadding(5);
-        cell.setHorizontalAlignment(alignment);
-        cell.setBorderColor(new Color(226, 232, 240));
-        return cell;
-    }
-
-    private void addTotalRow(PdfPTable table, String label, String value, Font font) {
-        PdfPCell lCell = new PdfPCell(new Phrase(label, font));
-        lCell.setBorder(Rectangle.NO_BORDER);
-        lCell.setPadding(3);
-        table.addCell(lCell);
-
-        PdfPCell vCell = new PdfPCell(new Phrase(value, font));
-        vCell.setBorder(Rectangle.NO_BORDER);
-        vCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        vCell.setPadding(3);
-        table.addCell(vCell);
     }
 
     private void populateAndCalculateLines(Invoice invoice, List<InvoiceLineRequest> lineRequests, Long companyId) {

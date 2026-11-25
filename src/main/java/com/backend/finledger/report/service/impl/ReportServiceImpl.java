@@ -1,8 +1,11 @@
 package com.backend.finledger.report.service.impl;
 
+import com.backend.finledger.attachment.service.FileStorageService;
 import com.backend.finledger.banking.entity.BankAccount;
 import com.backend.finledger.banking.repository.BankAccountRepository;
 import com.backend.finledger.common.BusinessException;
+import com.backend.finledger.company.entity.Company;
+import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.crm.entity.CrmPipelineStage;
 import com.backend.finledger.crm.entity.Opportunity;
 import com.backend.finledger.crm.entity.StageType;
@@ -34,21 +37,13 @@ import com.backend.finledger.purchases.entity.Bill;
 import com.backend.finledger.purchases.repository.BillRepository;
 import com.backend.finledger.purchases.service.ApAgeingService;
 import com.backend.finledger.report.dto.*;
+import com.backend.finledger.report.pdf.ReportPdfRenderer;
 import com.backend.finledger.report.service.ReportService;
 import com.backend.finledger.sales.dto.ArAgeingReportDto;
 import com.backend.finledger.sales.entity.Invoice;
 import com.backend.finledger.sales.repository.InvoiceRepository;
 import com.backend.finledger.sales.service.ArAgeingService;
 import com.backend.finledger.security.CurrentUser;
-import com.lowagie.text.Document;
-import com.lowagie.text.Font;
-import com.lowagie.text.FontFactory;
-import com.lowagie.text.PageSize;
-import com.lowagie.text.Paragraph;
-import com.lowagie.text.Phrase;
-import com.lowagie.text.pdf.PdfPCell;
-import com.lowagie.text.pdf.PdfPTable;
-import com.lowagie.text.pdf.PdfWriter;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.IndexedColors;
@@ -63,7 +58,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -95,6 +89,8 @@ public class ReportServiceImpl implements ReportService {
     private final InvoiceRepository invoiceRepository;
     private final BillRepository billRepository;
     private final CrmActivityRepository crmActivityRepository;
+    private final CompanyRepository companyRepository;
+    private final FileStorageService fileStorageService;
 
     public ReportServiceImpl(
             AccountRepository accountRepository,
@@ -118,7 +114,33 @@ public class ReportServiceImpl implements ReportService {
                 opportunityRepository, stageRepository, stockBalanceRepository, stockMovementRepository,
                 itemRepository, itemCategoryRepository, warehouseRepository, expenseRepository,
                 expenseCategoryRepository, arAgeingService, apAgeingService, invoiceRepository,
-                billRepository, null);
+                billRepository, null, null, null);
+    }
+
+    public ReportServiceImpl(
+            AccountRepository accountRepository,
+            JournalLineRepository journalLineRepository,
+            JournalEntryRepository journalEntryRepository,
+            BankAccountRepository bankAccountRepository,
+            OpportunityRepository opportunityRepository,
+            CrmPipelineStageRepository stageRepository,
+            StockBalanceRepository stockBalanceRepository,
+            StockMovementRepository stockMovementRepository,
+            ItemRepository itemRepository,
+            ItemCategoryRepository itemCategoryRepository,
+            WarehouseRepository warehouseRepository,
+            ExpenseRepository expenseRepository,
+            ExpenseCategoryRepository expenseCategoryRepository,
+            ArAgeingService arAgeingService,
+            ApAgeingService apAgeingService,
+            InvoiceRepository invoiceRepository,
+            BillRepository billRepository,
+            CrmActivityRepository crmActivityRepository) {
+        this(accountRepository, journalLineRepository, journalEntryRepository, bankAccountRepository,
+                opportunityRepository, stageRepository, stockBalanceRepository, stockMovementRepository,
+                itemRepository, itemCategoryRepository, warehouseRepository, expenseRepository,
+                expenseCategoryRepository, arAgeingService, apAgeingService, invoiceRepository,
+                billRepository, crmActivityRepository, null, null);
     }
 
     @Autowired
@@ -140,7 +162,9 @@ public class ReportServiceImpl implements ReportService {
             ApAgeingService apAgeingService,
             InvoiceRepository invoiceRepository,
             BillRepository billRepository,
-            CrmActivityRepository crmActivityRepository) {
+            CrmActivityRepository crmActivityRepository,
+            CompanyRepository companyRepository,
+            FileStorageService fileStorageService) {
         this.accountRepository = accountRepository;
         this.journalLineRepository = journalLineRepository;
         this.journalEntryRepository = journalEntryRepository;
@@ -159,6 +183,8 @@ public class ReportServiceImpl implements ReportService {
         this.invoiceRepository = invoiceRepository;
         this.billRepository = billRepository;
         this.crmActivityRepository = crmActivityRepository;
+        this.companyRepository = companyRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
@@ -1022,11 +1048,74 @@ public class ReportServiceImpl implements ReportService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('REPORT_VIEW')")
     public byte[] exportReport(String type, String format, Map<String, String> params) {
-        ReportExportData data = buildReportExportData(type, params != null ? params : Map.of());
+        Map<String, String> safeParams = params != null ? params : Map.of();
         if ("pdf".equalsIgnoreCase(format)) {
-            return exportToPdf(data);
+            return exportStructuredPdf(type, safeParams);
         }
+        ReportExportData data = buildReportExportData(type, safeParams);
         return exportToExcel(data);
+    }
+
+    private byte[] exportStructuredPdf(String type, Map<String, String> params) {
+        LocalDate from = parseLocalDateParam(params.get("from"));
+        LocalDate to = parseLocalDateParam(params.get("to"));
+        LocalDate asOf = parseLocalDateParam(params.get("asOf"));
+        String compare = blankToNull(params.get("compare"));
+        Long costCenterId = parseLongParam(params.get("costCenterId"));
+        Long accountId = parseLongParam(params.get("accountId"));
+        Long itemId = parseLongParam(params.get("itemId"));
+        Long warehouseId = parseLongParam(params.get("warehouseId"));
+        Long ownerId = parseLongParam(params.get("ownerId"));
+        String groupBy = blankToNull(params.get("groupBy"));
+
+        Company company = resolveCurrentCompany();
+        String normalized = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
+
+        return switch (normalized) {
+            case "profit-loss" -> ReportPdfRenderer.renderProfitLoss(
+                    getProfitLossReport(from, to, compare, costCenterId), company, fileStorageService);
+            case "balance-sheet" -> ReportPdfRenderer.renderBalanceSheet(
+                    getBalanceSheetReport(asOf, compare), company, fileStorageService);
+            case "trial-balance" -> ReportPdfRenderer.renderTrialBalance(
+                    getTrialBalanceReport(asOf), company, fileStorageService);
+            case "general-ledger" -> {
+                if (accountId == null) {
+                    throw new BusinessException("MISSING_PARAMETER", "accountId is required to export General Ledger.");
+                }
+                yield ReportPdfRenderer.renderGeneralLedger(
+                        getGeneralLedgerReport(accountId, from, to), company, fileStorageService);
+            }
+            case "ar-ageing" -> ReportPdfRenderer.renderArAgeing(
+                    arAgeingService.getArAgeingReport(asOf), company, fileStorageService);
+            case "ap-ageing" -> ReportPdfRenderer.renderApAgeing(
+                    apAgeingService.getApAgeingReport(asOf), company, fileStorageService);
+            case "vat-return" -> ReportPdfRenderer.renderVatReturn(
+                    getVatReturnReport(from, to), company, fileStorageService);
+            case "stock-valuation" -> ReportPdfRenderer.renderStockValuation(
+                    getStockValuationReport(asOf, warehouseId), company, fileStorageService);
+            case "stock-movement" -> {
+                if (itemId == null) {
+                    throw new BusinessException("MISSING_PARAMETER", "itemId is required to export Stock Movement.");
+                }
+                yield ReportPdfRenderer.renderStockMovement(
+                        getStockMovementReport(itemId, from, to), company, fileStorageService);
+            }
+            case "pipeline-forecast" -> ReportPdfRenderer.renderPipelineForecast(
+                    getPipelineForecastReport(from, to, ownerId), company, fileStorageService);
+            case "expense-analysis" -> ReportPdfRenderer.renderExpenseAnalysis(
+                    getExpenseAnalysisReport(from, to, groupBy), company, fileStorageService);
+            default -> throw new BusinessException("UNSUPPORTED_REPORT_TYPE", "Unsupported report export type: " + type);
+        };
+    }
+
+    private Company resolveCurrentCompany() {
+        if (companyRepository == null) return null;
+        try {
+            Long companyId = CurrentUser.getCompanyId();
+            return companyId != null ? companyRepository.findById(companyId).orElse(null) : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private ReportExportData buildReportExportData(String type, Map<String, String> params) {
@@ -1197,44 +1286,6 @@ public class ReportServiceImpl implements ReportService {
             }
             default -> throw new BusinessException("UNSUPPORTED_REPORT_TYPE", "Unsupported report export type: " + type);
         };
-    }
-
-    private byte[] exportToPdf(ReportExportData data) {
-        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Document document = new Document(PageSize.A4.rotate());
-            PdfWriter.getInstance(document, out);
-            document.open();
-
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, Color.DARK_GRAY);
-            Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.WHITE);
-            Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9, Color.BLACK);
-
-            document.add(new Paragraph("FinLedger - " + data.title(), titleFont));
-            document.add(new Paragraph("Generated on: " + LocalDate.now() + " | Tenant Scope: Current Organization\n\n"));
-
-            PdfPTable table = new PdfPTable(data.headers().length);
-            table.setWidthPercentage(100);
-            table.setSpacingBefore(10f);
-
-            for (String h : data.headers()) {
-                PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
-                cell.setBackgroundColor(new Color(24, 76, 120));
-                cell.setPadding(6f);
-                table.addCell(cell);
-            }
-
-            for (String[] row : data.rows()) {
-                for (String val : row) {
-                    table.addCell(new Phrase(val != null ? val : "-", cellFont));
-                }
-            }
-
-            document.add(table);
-            document.close();
-            return out.toByteArray();
-        } catch (Exception e) {
-            throw new BusinessException("EXPORT_ERROR", "Failed to generate PDF report: " + e.getMessage());
-        }
     }
 
     private byte[] exportToExcel(ReportExportData data) {

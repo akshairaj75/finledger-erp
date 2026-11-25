@@ -255,5 +255,11 @@ class DashboardAndReportsTest {
         assertNotNull(pdfBytes);
         assertTrue(pdfBytes.length > 0);
         assertEquals("%PDF", new String(pdfBytes, 0, 4));
+
+        byte[] bsPdf = reportService.exportReport("balance-sheet", "pdf", Map.of("asOf", "2026-10-31"));
+        assertEquals("%PDF", new String(bsPdf, 0, 4));
+
+        byte[] tbPdf = reportService.exportReport("trial-balance", "pdf", Map.of("asOf", "2026-10-31"));
+        assertEquals("%PDF", new String(tbPdf, 0, 4));
     }
 }

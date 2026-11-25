@@ -1,9 +1,14 @@
 package com.backend.finledger.crm.service.impl;
 
+import com.backend.finledger.attachment.service.FileStorageService;
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
 import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
+import com.backend.finledger.common.pdf.FinLedgerPdfTheme;
+import com.backend.finledger.common.pdf.PdfBillingHelper;
+import com.backend.finledger.common.pdf.PdfBrandingHeaderBuilder;
+import com.backend.finledger.common.pdf.PdfCellRenderers;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.crm.dto.*;
@@ -41,22 +46,16 @@ import com.backend.finledger.tax.repository.TaxRateRepository;
 import com.backend.finledger.tax.service.TaxCalculator;
 import com.lowagie.text.Document;
 import com.lowagie.text.Element;
-import com.lowagie.text.Font;
-import com.lowagie.text.FontFactory;
 import com.lowagie.text.PageSize;
-import com.lowagie.text.Paragraph;
-import com.lowagie.text.Phrase;
-import com.lowagie.text.Rectangle;
-import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -90,6 +89,7 @@ public class QuotationServiceImpl implements QuotationService {
     private final InvoiceService invoiceService;
     private final InvoiceRepository invoiceRepository;
     private final MailService mailService;
+    private final FileStorageService fileStorageService;
 
     public QuotationServiceImpl(QuotationRepository quotationRepository,
                                 QuotationLineRepository quotationLineRepository,
@@ -107,6 +107,30 @@ public class QuotationServiceImpl implements QuotationService {
                                 InvoiceService invoiceService,
                                 InvoiceRepository invoiceRepository,
                                 MailService mailService) {
+        this(quotationRepository, quotationLineRepository, opportunityRepository,
+                customerRepository, leadRepository, taxRateRepository, accountRepository,
+                itemRepository, warehouseRepository, stockBalanceRepository, companyRepository,
+                numberSeriesService, taxCalculator, invoiceService, invoiceRepository, mailService, null);
+    }
+
+    @Autowired
+    public QuotationServiceImpl(QuotationRepository quotationRepository,
+                                QuotationLineRepository quotationLineRepository,
+                                OpportunityRepository opportunityRepository,
+                                CustomerRepository customerRepository,
+                                LeadRepository leadRepository,
+                                TaxRateRepository taxRateRepository,
+                                AccountRepository accountRepository,
+                                ItemRepository itemRepository,
+                                WarehouseRepository warehouseRepository,
+                                StockBalanceRepository stockBalanceRepository,
+                                CompanyRepository companyRepository,
+                                NumberSeriesService numberSeriesService,
+                                TaxCalculator taxCalculator,
+                                InvoiceService invoiceService,
+                                InvoiceRepository invoiceRepository,
+                                MailService mailService,
+                                FileStorageService fileStorageService) {
         this.quotationRepository = quotationRepository;
         this.quotationLineRepository = quotationLineRepository;
         this.opportunityRepository = opportunityRepository;
@@ -123,6 +147,7 @@ public class QuotationServiceImpl implements QuotationService {
         this.invoiceService = invoiceService;
         this.invoiceRepository = invoiceRepository;
         this.mailService = mailService;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
@@ -400,104 +425,91 @@ public class QuotationServiceImpl implements QuotationService {
                 .orElseThrow(() -> new BusinessException("COMPANY_NOT_FOUND", "Company not found"));
 
         String customerName = "N/A";
-        String customerTrn = "";
+        String customerTrn = null;
+        String customerEmail = null;
+        String customerAddress = null;
         if (quotation.getCustomerId() != null) {
             Customer cust = customerRepository.findByCompanyIdAndId(companyId, quotation.getCustomerId()).orElse(null);
             if (cust != null) {
                 customerName = cust.getName();
-                customerTrn = cust.getTrn() != null ? "TRN: " + cust.getTrn() : "";
+                customerTrn = cust.getTrn();
+                customerEmail = cust.getEmail();
+                customerAddress = cust.getBillingAddress();
             }
         } else if (quotation.getLeadId() != null) {
             Lead lead = leadRepository.findByCompanyIdAndId(companyId, quotation.getLeadId()).orElse(null);
             if (lead != null) {
                 customerName = lead.getCompanyName() != null ? lead.getCompanyName() : lead.getContactName();
+                customerEmail = lead.getEmail();
             }
         }
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            Document document = new Document(PageSize.A4, 36, 36, 40, 40);
-            PdfWriter.getInstance(document, baos);
+            Document document = new Document(PageSize.A4, 36, 36, 36, 46);
+            PdfWriter writer = PdfWriter.getInstance(document, baos);
+            writer.setPageEvent(new PdfCellRenderers.FinLedgerPageFooterEvent(
+                    company.getLegalName(), "PRICE QUOTATION #" + quotation.getQuotationNo()));
             document.open();
 
-            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20, new Color(15, 23, 42));
-            Font subTitleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, new Color(51, 65, 85));
-            Font regularFont = FontFactory.getFont(FontFactory.HELVETICA, 10, new Color(51, 65, 85));
-            Font boldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(15, 23, 42));
+            PdfBrandingHeaderBuilder.addDocumentHeader(
+                    document,
+                    company,
+                    fileStorageService,
+                    "PRICE QUOTATION",
+                    "# " + quotation.getQuotationNo(),
+                    quotation.getStatus().name()
+            );
 
-            Paragraph title = new Paragraph("PRICE QUOTATION", titleFont);
-            title.setAlignment(Element.ALIGN_RIGHT);
-            document.add(title);
-
-            Paragraph docNo = new Paragraph("# " + quotation.getQuotationNo(), subTitleFont);
-            docNo.setAlignment(Element.ALIGN_RIGHT);
-            document.add(docNo);
-
-            document.add(new Paragraph(" "));
-
-            PdfPTable headerTable = new PdfPTable(2);
-            headerTable.setWidthPercentage(100);
-
-            PdfPCell leftCell = new PdfPCell();
-            leftCell.setBorder(Rectangle.NO_BORDER);
-            leftCell.addElement(new Paragraph("ISSUED BY:", boldFont));
-            leftCell.addElement(new Paragraph(company.getLegalName(), boldFont));
-            if (company.getTrn() != null && !company.getTrn().isBlank()) {
-                leftCell.addElement(new Paragraph("TRN: " + company.getTrn(), regularFont));
+            List<String[]> quotedToRows = new ArrayList<>();
+            quotedToRows.add(new String[]{null, customerName});
+            if (customerTrn != null && !customerTrn.isBlank()) {
+                quotedToRows.add(new String[]{"TRN", customerTrn});
             }
-            if (company.getAddress() != null) {
-                leftCell.addElement(new Paragraph(company.getAddress(), regularFont));
+            if (customerAddress != null && !customerAddress.isBlank()) {
+                quotedToRows.add(new String[]{customerAddress});
             }
-            headerTable.addCell(leftCell);
-
-            PdfPCell rightCell = new PdfPCell();
-            rightCell.setBorder(Rectangle.NO_BORDER);
-            rightCell.addElement(new Paragraph("QUOTED TO:", boldFont));
-            rightCell.addElement(new Paragraph(customerName, boldFont));
-            if (!customerTrn.isBlank()) {
-                rightCell.addElement(new Paragraph(customerTrn, regularFont));
+            if (customerEmail != null && !customerEmail.isBlank()) {
+                quotedToRows.add(new String[]{"Email", customerEmail});
             }
-            rightCell.addElement(new Paragraph("Quote Date: " + quotation.getQuoteDate().format(DateTimeFormatter.ISO_DATE), regularFont));
-            rightCell.addElement(new Paragraph("Valid Until: " + quotation.getValidUntil().format(DateTimeFormatter.ISO_DATE), regularFont));
-            rightCell.addElement(new Paragraph("Status: " + quotation.getStatus().name(), regularFont));
-            headerTable.addCell(rightCell);
 
-            document.add(headerTable);
-            document.add(new Paragraph(" "));
+            List<String[]> metaRows = List.of(
+                    new String[]{"Quote Date", quotation.getQuoteDate().format(DateTimeFormatter.ISO_DATE)},
+                    new String[]{"Valid Until", quotation.getValidUntil().format(DateTimeFormatter.ISO_DATE)},
+                    new String[]{"Currency", quotation.getCurrencyCode()},
+                    new String[]{"Status", quotation.getStatus().name()}
+            );
+            PdfBillingHelper.addTwoColumnMetaCards(document, "QUOTED TO", quotedToRows, "QUOTATION DETAILS", metaRows);
 
-            // Lines table
             PdfPTable table = new PdfPTable(6);
             table.setWidthPercentage(100);
-            table.setWidths(new float[]{8f, 40f, 12f, 14f, 12f, 14f});
+            table.setWidths(new float[]{7f, 41f, 11f, 14f, 11f, 16f});
+            table.setHeaderRows(1);
 
-            addHeaderCell(table, "#", boldFont);
-            addHeaderCell(table, "Description", boldFont);
-            addHeaderCell(table, "Qty", boldFont);
-            addHeaderCell(table, "Unit Price", boldFont);
-            addHeaderCell(table, "Disc %", boldFont);
-            addHeaderCell(table, "Total (" + quotation.getCurrencyCode() + ")", boldFont);
+            PdfBillingHelper.addLineTableHeaders(
+                    table,
+                    new String[]{"#", "Description", "Qty", "Unit Price", "Disc %", "Total (" + quotation.getCurrencyCode() + ")"},
+                    new int[]{Element.ALIGN_CENTER, Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT}
+            );
 
             for (QuotationLine line : quotation.getLines()) {
-                table.addCell(createBodyCell(String.valueOf(line.getLineNo()), regularFont, Element.ALIGN_CENTER));
-                table.addCell(createBodyCell(line.getDescription(), regularFont, Element.ALIGN_LEFT));
-                table.addCell(createBodyCell(line.getQuantity().toPlainString(), regularFont, Element.ALIGN_RIGHT));
-                table.addCell(createBodyCell(line.getUnitPrice().toPlainString(), regularFont, Element.ALIGN_RIGHT));
-                table.addCell(createBodyCell(line.getDiscountPct() != null ? line.getDiscountPct().toPlainString() + "%" : "0%", regularFont, Element.ALIGN_RIGHT));
-                table.addCell(createBodyCell(line.getLineTotal().toPlainString(), regularFont, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(String.valueOf(line.getLineNo()), FinLedgerPdfTheme.FONT_META, Element.ALIGN_CENTER));
+                table.addCell(PdfBillingHelper.lineBodyCell(line.getDescription(), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_LEFT));
+                table.addCell(PdfBillingHelper.lineBodyCell(FinLedgerPdfTheme.fmtQty(line.getQuantity()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(FinLedgerPdfTheme.fmtMoney(line.getUnitPrice()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(
+                        line.getDiscountPct() != null && line.getDiscountPct().compareTo(BigDecimal.ZERO) > 0
+                                ? FinLedgerPdfTheme.fmtQty(line.getDiscountPct()) + "%" : "-",
+                        FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                table.addCell(PdfBillingHelper.lineBodyCell(FinLedgerPdfTheme.fmtMoney(line.getLineTotal()), FinLedgerPdfTheme.FONT_BODY_BOLD, Element.ALIGN_RIGHT));
             }
-
             document.add(table);
-            document.add(new Paragraph(" "));
 
-            // Totals
-            PdfPTable totalTable = new PdfPTable(2);
-            totalTable.setWidthPercentage(45);
-            totalTable.setHorizontalAlignment(Element.ALIGN_RIGHT);
-
-            addTotalRow(totalTable, "Subtotal:", quotation.getSubtotal() + " " + quotation.getCurrencyCode(), regularFont);
-            addTotalRow(totalTable, "VAT Total:", quotation.getTaxTotal() + " " + quotation.getCurrencyCode(), regularFont);
-            addTotalRow(totalTable, "Grand Total:", quotation.getTotal() + " " + quotation.getCurrencyCode(), boldFont);
-
-            document.add(totalTable);
+            String ccy = quotation.getCurrencyCode();
+            PdfBillingHelper.addTotalsCard(document, List.of(
+                    new PdfBillingHelper.TotalsRow("Subtotal (Net)", FinLedgerPdfTheme.fmtMoney(quotation.getSubtotal()) + " " + ccy, false, false),
+                    new PdfBillingHelper.TotalsRow("VAT Total", FinLedgerPdfTheme.fmtMoney(quotation.getTaxTotal()) + " " + ccy, false, false),
+                    new PdfBillingHelper.TotalsRow("Grand Total", FinLedgerPdfTheme.fmtMoney(quotation.getTotal()) + " " + ccy, true, true)
+            ));
 
             document.close();
             return baos.toByteArray();
@@ -633,31 +645,4 @@ public class QuotationServiceImpl implements QuotationService {
         );
     }
 
-    private void addHeaderCell(PdfPTable table, String text, Font font) {
-        PdfPCell cell = new PdfPCell(new Phrase(text, font));
-        cell.setBackgroundColor(new Color(241, 245, 249));
-        cell.setPadding(6);
-        cell.setHorizontalAlignment(Element.ALIGN_CENTER);
-        table.addCell(cell);
-    }
-
-    private PdfPCell createBodyCell(String text, Font font, int alignment) {
-        PdfPCell cell = new PdfPCell(new Phrase(text != null ? text : "", font));
-        cell.setPadding(6);
-        cell.setHorizontalAlignment(alignment);
-        return cell;
-    }
-
-    private void addTotalRow(PdfPTable table, String label, String value, Font font) {
-        PdfPCell lblCell = new PdfPCell(new Phrase(label, font));
-        lblCell.setBorder(Rectangle.NO_BORDER);
-        lblCell.setPadding(4);
-        table.addCell(lblCell);
-
-        PdfPCell valCell = new PdfPCell(new Phrase(value, font));
-        valCell.setBorder(Rectangle.NO_BORDER);
-        valCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        valCell.setPadding(4);
-        table.addCell(valCell);
-    }
 }
