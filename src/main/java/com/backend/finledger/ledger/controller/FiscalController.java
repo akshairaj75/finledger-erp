@@ -40,6 +40,12 @@ public class FiscalController {
         return ResponseEntity.ok(fiscalYearPeriodService.closePeriod(id));
     }
 
+    @PostMapping("/fiscal-periods/{id}/lock")
+    @PreAuthorize("hasAuthority('SETTINGS_EDIT')")
+    public ResponseEntity<FiscalPeriodDto> lockPeriod(@PathVariable Long id) {
+        return ResponseEntity.ok(fiscalYearPeriodService.lockPeriod(id));
+    }
+
     @PostMapping("/fiscal-years/{id}/year-end-close")
     @PreAuthorize("hasAuthority('SETTINGS_EDIT')")
     public ResponseEntity<FiscalYearDto> closeFiscalYear(

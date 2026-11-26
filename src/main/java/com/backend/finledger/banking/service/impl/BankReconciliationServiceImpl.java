@@ -200,14 +200,16 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
                     continue;
                 }
 
-                // Check amount
+                // Check amount (compare transaction-currency jl.getDebit()/jl.getCredit() for foreign-currency bank accounts)
                 boolean amountMatches = false;
+                BigDecimal bookDebit = jl.getDebit() != null ? jl.getDebit() : (jl.getBaseDebit() != null ? jl.getBaseDebit() : BigDecimal.ZERO);
+                BigDecimal bookCredit = jl.getCredit() != null ? jl.getCredit() : (jl.getBaseCredit() != null ? jl.getBaseCredit() : BigDecimal.ZERO);
                 if (stmtAmount.compareTo(BigDecimal.ZERO) > 0) {
                     // Deposit -> Book debit
-                    amountMatches = stmtAmount.compareTo(jl.getBaseDebit()) == 0;
+                    amountMatches = stmtAmount.compareTo(bookDebit) == 0;
                 } else if (stmtAmount.compareTo(BigDecimal.ZERO) < 0) {
                     // Withdrawal -> Book credit
-                    amountMatches = stmtAmount.abs().compareTo(jl.getBaseCredit()) == 0;
+                    amountMatches = stmtAmount.abs().compareTo(bookCredit) == 0;
                 }
 
                 if (amountMatches) {

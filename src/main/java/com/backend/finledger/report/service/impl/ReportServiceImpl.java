@@ -14,6 +14,7 @@ import com.backend.finledger.crm.repository.CrmPipelineStageRepository;
 import com.backend.finledger.crm.repository.OpportunityRepository;
 import com.backend.finledger.expense.entity.Expense;
 import com.backend.finledger.expense.entity.ExpenseCategory;
+import com.backend.finledger.expense.entity.ExpenseLine;
 import com.backend.finledger.expense.entity.ExpenseStatus;
 import com.backend.finledger.expense.repository.ExpenseCategoryRepository;
 import com.backend.finledger.expense.repository.ExpenseRepository;
@@ -30,10 +31,12 @@ import com.backend.finledger.ledger.dto.TrialBalanceLineDto;
 import com.backend.finledger.ledger.dto.TrialBalanceReportDto;
 import com.backend.finledger.ledger.entity.*;
 import com.backend.finledger.ledger.repository.AccountRepository;
+import com.backend.finledger.ledger.repository.CostCenterRepository;
 import com.backend.finledger.ledger.repository.JournalEntryRepository;
 import com.backend.finledger.ledger.repository.JournalLineRepository;
 import com.backend.finledger.purchases.dto.ApAgeingReportDto;
 import com.backend.finledger.purchases.entity.Bill;
+import com.backend.finledger.purchases.entity.BillDocType;
 import com.backend.finledger.purchases.repository.BillRepository;
 import com.backend.finledger.purchases.service.ApAgeingService;
 import com.backend.finledger.report.dto.*;
@@ -41,9 +44,12 @@ import com.backend.finledger.report.pdf.ReportPdfRenderer;
 import com.backend.finledger.report.service.ReportService;
 import com.backend.finledger.sales.dto.ArAgeingReportDto;
 import com.backend.finledger.sales.entity.Invoice;
+import com.backend.finledger.sales.entity.InvoiceDocType;
 import com.backend.finledger.sales.repository.InvoiceRepository;
 import com.backend.finledger.sales.service.ArAgeingService;
 import com.backend.finledger.security.CurrentUser;
+import com.backend.finledger.user.entity.User;
+import com.backend.finledger.user.repository.UserRepository;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.IndexedColors;
@@ -95,6 +101,8 @@ public class ReportServiceImpl implements ReportService {
     private final CrmActivityRepository crmActivityRepository;
     private final CompanyRepository companyRepository;
     private final FileStorageService fileStorageService;
+    private final CostCenterRepository costCenterRepository;
+    private final UserRepository userRepository;
 
     public ReportServiceImpl(
             AccountRepository accountRepository,
@@ -118,7 +126,7 @@ public class ReportServiceImpl implements ReportService {
                 opportunityRepository, stageRepository, stockBalanceRepository, stockMovementRepository,
                 itemRepository, itemCategoryRepository, warehouseRepository, expenseRepository,
                 expenseCategoryRepository, arAgeingService, apAgeingService, invoiceRepository,
-                billRepository, null, null, null);
+                billRepository, null, null, null, null, null);
     }
 
     public ReportServiceImpl(
@@ -144,7 +152,35 @@ public class ReportServiceImpl implements ReportService {
                 opportunityRepository, stageRepository, stockBalanceRepository, stockMovementRepository,
                 itemRepository, itemCategoryRepository, warehouseRepository, expenseRepository,
                 expenseCategoryRepository, arAgeingService, apAgeingService, invoiceRepository,
-                billRepository, crmActivityRepository, null, null);
+                billRepository, crmActivityRepository, null, null, null, null);
+    }
+
+    public ReportServiceImpl(
+            AccountRepository accountRepository,
+            JournalLineRepository journalLineRepository,
+            JournalEntryRepository journalEntryRepository,
+            BankAccountRepository bankAccountRepository,
+            OpportunityRepository opportunityRepository,
+            CrmPipelineStageRepository stageRepository,
+            StockBalanceRepository stockBalanceRepository,
+            StockMovementRepository stockMovementRepository,
+            ItemRepository itemRepository,
+            ItemCategoryRepository itemCategoryRepository,
+            WarehouseRepository warehouseRepository,
+            ExpenseRepository expenseRepository,
+            ExpenseCategoryRepository expenseCategoryRepository,
+            ArAgeingService arAgeingService,
+            ApAgeingService apAgeingService,
+            InvoiceRepository invoiceRepository,
+            BillRepository billRepository,
+            CrmActivityRepository crmActivityRepository,
+            CompanyRepository companyRepository,
+            FileStorageService fileStorageService) {
+        this(accountRepository, journalLineRepository, journalEntryRepository, bankAccountRepository,
+                opportunityRepository, stageRepository, stockBalanceRepository, stockMovementRepository,
+                itemRepository, itemCategoryRepository, warehouseRepository, expenseRepository,
+                expenseCategoryRepository, arAgeingService, apAgeingService, invoiceRepository,
+                billRepository, crmActivityRepository, companyRepository, fileStorageService, null, null);
     }
 
     @Autowired
@@ -168,7 +204,9 @@ public class ReportServiceImpl implements ReportService {
             BillRepository billRepository,
             CrmActivityRepository crmActivityRepository,
             CompanyRepository companyRepository,
-            FileStorageService fileStorageService) {
+            FileStorageService fileStorageService,
+            @Autowired(required = false) CostCenterRepository costCenterRepository,
+            @Autowired(required = false) UserRepository userRepository) {
         this.accountRepository = accountRepository;
         this.journalLineRepository = journalLineRepository;
         this.journalEntryRepository = journalEntryRepository;
@@ -189,6 +227,8 @@ public class ReportServiceImpl implements ReportService {
         this.crmActivityRepository = crmActivityRepository;
         this.companyRepository = companyRepository;
         this.fileStorageService = fileStorageService;
+        this.costCenterRepository = costCenterRepository;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -512,9 +552,23 @@ public class ReportServiceImpl implements ReportService {
                 ))
                 .collect(Collectors.toList());
 
-        long overdueActivitiesCount = crmActivityRepository != null
-                ? crmActivityRepository.countOverdueActivities(companyId, java.time.Instant.now())
-                : 0L;
+        boolean canViewAllCrm = CurrentUser.hasAnyAuthority("CRM_VIEW_ALL", "ROLE_ADMIN", "ADMIN");
+        Long currentUserId = null;
+        try {
+            currentUserId = CurrentUser.getUserId();
+        } catch (Exception e) {
+            // Unauthenticated or test context
+        }
+
+        long overdueActivitiesCount = 0L;
+        if (crmActivityRepository != null) {
+            java.time.Instant now = java.time.Instant.now();
+            if (canViewAllCrm || currentUserId == null) {
+                overdueActivitiesCount = crmActivityRepository.countOverdueActivities(companyId, now);
+            } else {
+                overdueActivitiesCount = crmActivityRepository.countOverdueActivitiesForUser(companyId, currentUserId, now);
+            }
+        }
 
         return new DashboardSummaryDto(
                 totalRevenueYtd,
@@ -837,11 +891,30 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal exemptSalesAmount = BigDecimal.ZERO;
 
         for (Invoice inv : invoices) {
-            if (inv.getTaxTotal() != null && inv.getTaxTotal().compareTo(BigDecimal.ZERO) > 0) {
-                stdSalesAmount = stdSalesAmount.add(inv.getSubtotal() != null ? inv.getSubtotal() : BigDecimal.ZERO);
-                stdSalesVat = stdSalesVat.add(inv.getTaxTotal());
+            BigDecimal rate = inv.getExchangeRate() != null && inv.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                    ? inv.getExchangeRate() : BigDecimal.ONE;
+            BigDecimal subtotal = (inv.getSubtotal() != null ? inv.getSubtotal() : BigDecimal.ZERO)
+                    .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal vat = (inv.getTaxTotal() != null ? inv.getTaxTotal() : BigDecimal.ZERO)
+                    .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+
+            boolean isCreditNote = inv.getDocType() == InvoiceDocType.CREDIT_NOTE;
+            boolean hasVat = vat.compareTo(BigDecimal.ZERO) > 0;
+
+            if (isCreditNote) {
+                if (hasVat) {
+                    stdSalesAmount = stdSalesAmount.subtract(subtotal);
+                    stdSalesVat = stdSalesVat.subtract(vat);
+                } else {
+                    zeroSalesAmount = zeroSalesAmount.subtract(subtotal);
+                }
             } else {
-                zeroSalesAmount = zeroSalesAmount.add(inv.getSubtotal() != null ? inv.getSubtotal() : BigDecimal.ZERO);
+                if (hasVat) {
+                    stdSalesAmount = stdSalesAmount.add(subtotal);
+                    stdSalesVat = stdSalesVat.add(vat);
+                } else {
+                    zeroSalesAmount = zeroSalesAmount.add(subtotal);
+                }
             }
         }
 
@@ -849,8 +922,46 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal stdPurchasesVat = BigDecimal.ZERO;
 
         for (Bill b : bills) {
-            stdPurchasesAmount = stdPurchasesAmount.add(b.getSubtotal() != null ? b.getSubtotal() : BigDecimal.ZERO);
-            stdPurchasesVat = stdPurchasesVat.add(b.getTaxTotal() != null ? b.getTaxTotal() : BigDecimal.ZERO);
+            BigDecimal rate = b.getExchangeRate() != null && b.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                    ? b.getExchangeRate() : BigDecimal.ONE;
+            BigDecimal subtotal = (b.getSubtotal() != null ? b.getSubtotal() : BigDecimal.ZERO)
+                    .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal vat = (b.getTaxTotal() != null ? b.getTaxTotal() : BigDecimal.ZERO)
+                    .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+
+            boolean isDebitNote = b.getDocType() == BillDocType.DEBIT_NOTE;
+
+            if (isDebitNote) {
+                stdPurchasesAmount = stdPurchasesAmount.subtract(subtotal);
+                stdPurchasesVat = stdPurchasesVat.subtract(vat);
+            } else {
+                stdPurchasesAmount = stdPurchasesAmount.add(subtotal);
+                stdPurchasesVat = stdPurchasesVat.add(vat);
+            }
+        }
+
+        // Include recoverable Input VAT from posted expenses
+        if (expenseRepository != null) {
+            List<Expense> expenses = expenseRepository.searchExpenses(
+                    companyId, null, null, null, fromDate, toDate, PageRequest.of(0, 10000)).getContent();
+
+            for (Expense exp : expenses) {
+                boolean isPosted = (exp.getStatus() == ExpenseStatus.POSTED
+                        || exp.getStatus() == ExpenseStatus.REIMBURSED
+                        || exp.getJournalEntryId() != null) && exp.getStatus() != ExpenseStatus.VOID;
+
+                if (isPosted) {
+                    BigDecimal rate = exp.getExchangeRate() != null && exp.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                            ? exp.getExchangeRate() : BigDecimal.ONE;
+                    BigDecimal subtotal = (exp.getSubtotal() != null ? exp.getSubtotal() : BigDecimal.ZERO)
+                            .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal vat = (exp.getTaxTotal() != null ? exp.getTaxTotal() : BigDecimal.ZERO)
+                            .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+
+                    stdPurchasesAmount = stdPurchasesAmount.add(subtotal);
+                    stdPurchasesVat = stdPurchasesVat.add(vat);
+                }
+            }
         }
 
         BigDecimal totalOutputVat = stdSalesVat;
@@ -1062,48 +1173,166 @@ public class ReportServiceImpl implements ReportService {
         Long companyId = CurrentUser.getCompanyId();
         LocalDate fromDate = from != null ? from : LocalDate.of(LocalDate.now().getYear(), 1, 1);
         LocalDate toDate = to != null ? to : LocalDate.now();
+        String groupMode = groupBy != null ? groupBy.trim().toLowerCase(Locale.ROOT) : "category";
 
         List<Expense> expenses = expenseRepository.searchExpenses(
                 companyId, null, null, null, fromDate, toDate, PageRequest.of(0, 5000)).getContent();
 
-        BigDecimal grandTotal = expenses.stream()
-                .map(e -> e.getTotal() != null ? e.getTotal() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Metadata resolution maps
+        Map<Long, String> categoryNameMap = expenseCategoryRepository != null
+                ? expenseCategoryRepository.findByCompanyIdOrderByNameAsc(companyId).stream()
+                        .collect(Collectors.toMap(ExpenseCategory::getId, ExpenseCategory::getName, (a, b) -> a))
+                : Map.of();
 
-        Map<String, List<Expense>> grouped = new LinkedHashMap<>();
-        for (Expense exp : expenses) {
-            String key;
-            if ("employee".equalsIgnoreCase(groupBy)) {
-                key = exp.getEmployeeUserId() != null ? "Employee #" + exp.getEmployeeUserId() : "Unassigned";
-            } else { // default: general category breakdown
-                key = exp.getPayeeName() != null && !exp.getPayeeName().isBlank() ? exp.getPayeeName() : "General Operations";
+        Map<Long, String> costCenterNameMap = costCenterRepository != null
+                ? costCenterRepository.findByCompanyIdOrderByNameAsc(companyId).stream()
+                        .collect(Collectors.toMap(CostCenter::getId, CostCenter::getName, (a, b) -> a))
+                : Map.of();
+
+        class GroupAccumulator {
+            final String key;
+            final String name;
+            final java.util.Set<Long> claimIds = new java.util.HashSet<>();
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            BigDecimal reimbursableAmount = BigDecimal.ZERO;
+
+            GroupAccumulator(String key, String name) {
+                this.key = key;
+                this.name = name;
             }
-            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(exp);
         }
 
+        Map<String, GroupAccumulator> accumulators = new LinkedHashMap<>();
+
+        if ("employee".equals(groupMode)) {
+            // Group by employee user
+            for (Expense exp : expenses) {
+                Long empId = exp.getEmployeeUserId();
+                String key = empId != null ? String.valueOf(empId) : "unassigned";
+                String name;
+                if (empId != null) {
+                    if (userRepository != null) {
+                        name = userRepository.findById(empId).map(User::getFullName).orElse("Employee #" + empId);
+                    } else {
+                        name = "Employee #" + empId;
+                    }
+                } else if (exp.getPayeeName() != null && !exp.getPayeeName().isBlank()) {
+                    name = exp.getPayeeName();
+                } else {
+                    name = "Unassigned";
+                }
+
+                GroupAccumulator acc = accumulators.computeIfAbsent(key, k -> new GroupAccumulator(k, name));
+                if (exp.getId() != null) {
+                    acc.claimIds.add(exp.getId());
+                }
+
+                BigDecimal rate = exp.getExchangeRate() != null && exp.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                        ? exp.getExchangeRate() : BigDecimal.ONE;
+                BigDecimal expTotal = (exp.getTotal() != null ? exp.getTotal() : BigDecimal.ZERO)
+                        .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+
+                acc.totalAmount = acc.totalAmount.add(expTotal);
+                if (exp.getPaidBy() != null && "EMPLOYEE".equalsIgnoreCase(exp.getPaidBy().name())) {
+                    acc.reimbursableAmount = acc.reimbursableAmount.add(expTotal);
+                }
+            }
+        } else if ("costcenter".equals(groupMode) || "cost_center".equals(groupMode)) {
+            // Group by Cost Center from expense lines
+            for (Expense exp : expenses) {
+                BigDecimal rate = exp.getExchangeRate() != null && exp.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                        ? exp.getExchangeRate() : BigDecimal.ONE;
+                boolean isReimbursable = exp.getPaidBy() != null && "EMPLOYEE".equalsIgnoreCase(exp.getPaidBy().name());
+
+                List<ExpenseLine> lines = exp.getLines();
+                if (lines == null || lines.isEmpty()) {
+                    String key = "unassigned";
+                    String name = "Unassigned";
+                    GroupAccumulator acc = accumulators.computeIfAbsent(key, k -> new GroupAccumulator(k, name));
+                    if (exp.getId() != null) acc.claimIds.add(exp.getId());
+                    BigDecimal expTotal = (exp.getTotal() != null ? exp.getTotal() : BigDecimal.ZERO)
+                            .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+                    acc.totalAmount = acc.totalAmount.add(expTotal);
+                    if (isReimbursable) acc.reimbursableAmount = acc.reimbursableAmount.add(expTotal);
+                } else {
+                    for (ExpenseLine line : lines) {
+                        Long ccId = line.getCostCenterId();
+                        String key = ccId != null ? String.valueOf(ccId) : "unassigned";
+                        String name = ccId != null
+                                ? costCenterNameMap.getOrDefault(ccId, "Cost Center #" + ccId)
+                                : "Unassigned";
+
+                        GroupAccumulator acc = accumulators.computeIfAbsent(key, k -> new GroupAccumulator(k, name));
+                        if (exp.getId() != null) acc.claimIds.add(exp.getId());
+
+                        BigDecimal lineSub = line.getAmount() != null ? line.getAmount() : BigDecimal.ZERO;
+                        BigDecimal lineTax = line.getTaxAmount() != null ? line.getTaxAmount() : BigDecimal.ZERO;
+                        BigDecimal lineTotal = lineSub.add(lineTax).multiply(rate).setScale(2, RoundingMode.HALF_UP);
+
+                        acc.totalAmount = acc.totalAmount.add(lineTotal);
+                        if (isReimbursable) {
+                            acc.reimbursableAmount = acc.reimbursableAmount.add(lineTotal);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Default: Group by Category
+            for (Expense exp : expenses) {
+                BigDecimal rate = exp.getExchangeRate() != null && exp.getExchangeRate().compareTo(BigDecimal.ZERO) > 0
+                        ? exp.getExchangeRate() : BigDecimal.ONE;
+                boolean isReimbursable = exp.getPaidBy() != null && "EMPLOYEE".equalsIgnoreCase(exp.getPaidBy().name());
+
+                List<ExpenseLine> lines = exp.getLines();
+                if (lines == null || lines.isEmpty()) {
+                    String key = "general";
+                    String name = exp.getPayeeName() != null && !exp.getPayeeName().isBlank() ? exp.getPayeeName() : "General Operations";
+                    GroupAccumulator acc = accumulators.computeIfAbsent(key, k -> new GroupAccumulator(k, name));
+                    if (exp.getId() != null) acc.claimIds.add(exp.getId());
+                    BigDecimal expTotal = (exp.getTotal() != null ? exp.getTotal() : BigDecimal.ZERO)
+                            .multiply(rate).setScale(2, RoundingMode.HALF_UP);
+                    acc.totalAmount = acc.totalAmount.add(expTotal);
+                    if (isReimbursable) acc.reimbursableAmount = acc.reimbursableAmount.add(expTotal);
+                } else {
+                    for (ExpenseLine line : lines) {
+                        Long catId = line.getCategoryId();
+                        String key = catId != null ? String.valueOf(catId) : "uncategorized";
+                        String name = catId != null
+                                ? categoryNameMap.getOrDefault(catId, "Category #" + catId)
+                                : "General Operations";
+
+                        GroupAccumulator acc = accumulators.computeIfAbsent(key, k -> new GroupAccumulator(k, name));
+                        if (exp.getId() != null) acc.claimIds.add(exp.getId());
+
+                        BigDecimal lineSub = line.getAmount() != null ? line.getAmount() : BigDecimal.ZERO;
+                        BigDecimal lineTax = line.getTaxAmount() != null ? line.getTaxAmount() : BigDecimal.ZERO;
+                        BigDecimal lineTotal = lineSub.add(lineTax).multiply(rate).setScale(2, RoundingMode.HALF_UP);
+
+                        acc.totalAmount = acc.totalAmount.add(lineTotal);
+                        if (isReimbursable) {
+                            acc.reimbursableAmount = acc.reimbursableAmount.add(lineTotal);
+                        }
+                    }
+                }
+            }
+        }
+
+        BigDecimal grandTotal = accumulators.values().stream()
+                .map(a -> a.totalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         List<ExpenseAnalysisGroupDto> groupDtos = new ArrayList<>();
-        for (Map.Entry<String, List<Expense>> entry : grouped.entrySet()) {
-            List<Expense> groupList = entry.getValue();
-            int count = groupList.size();
-            BigDecimal totalAmt = groupList.stream()
-                    .map(e -> e.getTotal() != null ? e.getTotal() : BigDecimal.ZERO)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            BigDecimal reimbursableAmt = groupList.stream()
-                    .filter(e -> e.getPaidBy() != null && "EMPLOYEE".equalsIgnoreCase(e.getPaidBy().name()))
-                    .map(e -> e.getTotal() != null ? e.getTotal() : BigDecimal.ZERO)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
+        for (GroupAccumulator acc : accumulators.values()) {
             Double pct = grandTotal.compareTo(BigDecimal.ZERO) > 0
-                    ? totalAmt.divide(grandTotal, 4, RoundingMode.HALF_UP).doubleValue() * 100
+                    ? acc.totalAmount.divide(grandTotal, 4, RoundingMode.HALF_UP).doubleValue() * 100
                     : 0.0;
 
             groupDtos.add(new ExpenseAnalysisGroupDto(
-                    entry.getKey(),
-                    entry.getKey(),
-                    count,
-                    totalAmt,
-                    reimbursableAmt,
+                    acc.key,
+                    acc.name,
+                    acc.claimIds.size(),
+                    acc.totalAmount,
+                    acc.reimbursableAmount,
                     pct
             ));
         }

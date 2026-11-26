@@ -7,10 +7,26 @@ import com.backend.finledger.attachment.service.AttachmentService;
 import com.backend.finledger.attachment.service.FileStorageService;
 import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.ForbiddenException;
+import com.backend.finledger.crm.entity.Quotation;
+import com.backend.finledger.crm.entity.QuotationStatus;
+import com.backend.finledger.crm.repository.QuotationRepository;
 import com.backend.finledger.expense.entity.Expense;
 import com.backend.finledger.expense.entity.ExpenseStatus;
 import com.backend.finledger.expense.repository.ExpenseRepository;
+import com.backend.finledger.inventory.entity.AdjustmentStatus;
+import com.backend.finledger.inventory.entity.StockAdjustment;
+import com.backend.finledger.inventory.repository.StockAdjustmentRepository;
+import com.backend.finledger.ledger.entity.JournalEntry;
+import com.backend.finledger.ledger.entity.JournalStatus;
+import com.backend.finledger.ledger.repository.JournalEntryRepository;
+import com.backend.finledger.purchases.entity.Bill;
+import com.backend.finledger.purchases.entity.BillStatus;
+import com.backend.finledger.purchases.repository.BillRepository;
+import com.backend.finledger.sales.entity.Invoice;
+import com.backend.finledger.sales.entity.InvoiceStatus;
+import com.backend.finledger.sales.repository.InvoiceRepository;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -26,13 +42,35 @@ public class AttachmentServiceImpl implements AttachmentService {
     private final AttachmentRepository attachmentRepository;
     private final FileStorageService fileStorageService;
     private final ExpenseRepository expenseRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final BillRepository billRepository;
+    private final QuotationRepository quotationRepository;
+    private final JournalEntryRepository journalEntryRepository;
+    private final StockAdjustmentRepository stockAdjustmentRepository;
 
     public AttachmentServiceImpl(AttachmentRepository attachmentRepository,
                                  FileStorageService fileStorageService,
                                  ExpenseRepository expenseRepository) {
+        this(attachmentRepository, fileStorageService, expenseRepository, null, null, null, null, null);
+    }
+
+    @Autowired
+    public AttachmentServiceImpl(AttachmentRepository attachmentRepository,
+                                 FileStorageService fileStorageService,
+                                 ExpenseRepository expenseRepository,
+                                 @Autowired(required = false) InvoiceRepository invoiceRepository,
+                                 @Autowired(required = false) BillRepository billRepository,
+                                 @Autowired(required = false) QuotationRepository quotationRepository,
+                                 @Autowired(required = false) JournalEntryRepository journalEntryRepository,
+                                 @Autowired(required = false) StockAdjustmentRepository stockAdjustmentRepository) {
         this.attachmentRepository = attachmentRepository;
         this.fileStorageService = fileStorageService;
         this.expenseRepository = expenseRepository;
+        this.invoiceRepository = invoiceRepository;
+        this.billRepository = billRepository;
+        this.quotationRepository = quotationRepository;
+        this.journalEntryRepository = journalEntryRepository;
+        this.stockAdjustmentRepository = stockAdjustmentRepository;
     }
 
     @Override
@@ -111,14 +149,42 @@ public class AttachmentServiceImpl implements AttachmentService {
         Attachment attachment = attachmentRepository.findByCompanyIdAndId(companyId, id)
                 .orElseThrow(() -> new BusinessException("ATTACHMENT_NOT_FOUND", "Attachment not found with id: " + id));
 
-        // Enforce: "Remove (draft documents only)" and expense ownership
-        if ("EXPENSE".equalsIgnoreCase(attachment.getEntityType())) {
-            Expense expense = expenseRepository.findByCompanyIdAndId(companyId, attachment.getEntityId()).orElse(null);
+        String entityType = attachment.getEntityType() != null ? attachment.getEntityType().trim().toUpperCase() : "";
+        Long entityId = attachment.getEntityId();
+
+        // Enforce: "Remove (draft documents only)" across all stateful entity types
+        if ("EXPENSE".equals(entityType)) {
+            Expense expense = expenseRepository.findByCompanyIdAndId(companyId, entityId).orElse(null);
             if (expense != null) {
                 assertExpenseAttachmentAccess(expense);
                 if (expense.getStatus() != ExpenseStatus.DRAFT) {
                     throw new BusinessException("ATTACHMENT_LOCKED", "Attachments can only be deleted for draft documents.");
                 }
+            }
+        } else if ("INVOICE".equals(entityType) && invoiceRepository != null) {
+            Invoice invoice = invoiceRepository.findByCompanyIdAndId(companyId, entityId).orElse(null);
+            if (invoice != null && invoice.getStatus() != InvoiceStatus.DRAFT) {
+                throw new BusinessException("ATTACHMENT_LOCKED", "Attachments can only be deleted for draft documents.");
+            }
+        } else if ("BILL".equals(entityType) && billRepository != null) {
+            Bill bill = billRepository.findByCompanyIdAndId(companyId, entityId).orElse(null);
+            if (bill != null && bill.getStatus() != BillStatus.DRAFT) {
+                throw new BusinessException("ATTACHMENT_LOCKED", "Attachments can only be deleted for draft documents.");
+            }
+        } else if ("QUOTATION".equals(entityType) && quotationRepository != null) {
+            Quotation quotation = quotationRepository.findByCompanyIdAndId(companyId, entityId).orElse(null);
+            if (quotation != null && quotation.getStatus() != QuotationStatus.DRAFT) {
+                throw new BusinessException("ATTACHMENT_LOCKED", "Attachments can only be deleted for draft documents.");
+            }
+        } else if (("JOURNAL".equals(entityType) || "JOURNAL_ENTRY".equals(entityType)) && journalEntryRepository != null) {
+            JournalEntry journalEntry = journalEntryRepository.findByCompanyIdAndId(companyId, entityId).orElse(null);
+            if (journalEntry != null && journalEntry.getStatus() != JournalStatus.DRAFT) {
+                throw new BusinessException("ATTACHMENT_LOCKED", "Attachments can only be deleted for draft documents.");
+            }
+        } else if (("STOCK_ADJUSTMENT".equals(entityType) || "ADJUSTMENT".equals(entityType)) && stockAdjustmentRepository != null) {
+            StockAdjustment adjustment = stockAdjustmentRepository.findByCompanyIdAndId(companyId, entityId).orElse(null);
+            if (adjustment != null && adjustment.getStatus() != AdjustmentStatus.DRAFT) {
+                throw new BusinessException("ATTACHMENT_LOCKED", "Attachments can only be deleted for draft documents.");
             }
         }
 

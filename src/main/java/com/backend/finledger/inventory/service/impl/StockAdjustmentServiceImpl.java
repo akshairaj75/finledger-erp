@@ -4,6 +4,8 @@ import com.backend.finledger.common.BusinessException;
 import com.backend.finledger.common.DocType;
 import com.backend.finledger.common.NumberSeriesService;
 import com.backend.finledger.common.PageResponse;
+import com.backend.finledger.company.entity.Company;
+import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.inventory.dto.*;
 import com.backend.finledger.inventory.entity.*;
 import com.backend.finledger.inventory.repository.*;
@@ -17,6 +19,7 @@ import com.backend.finledger.ledger.entity.JournalSourceType;
 import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.ledger.service.PostingService;
 import com.backend.finledger.security.CurrentUser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -44,6 +47,7 @@ public class StockAdjustmentServiceImpl implements StockAdjustmentService {
     private final PostingService postingService;
     private final StockService stockService;
     private final CostingService costingService;
+    private final CompanyRepository companyRepository;
 
     public StockAdjustmentServiceImpl(
             StockAdjustmentRepository adjustmentRepository,
@@ -56,6 +60,24 @@ public class StockAdjustmentServiceImpl implements StockAdjustmentService {
             PostingService postingService,
             StockService stockService,
             CostingService costingService) {
+        this(adjustmentRepository, lineRepository, warehouseRepository, itemRepository,
+                stockBalanceRepository, accountRepository, numberSeriesService, postingService,
+                stockService, costingService, null);
+    }
+
+    @Autowired
+    public StockAdjustmentServiceImpl(
+            StockAdjustmentRepository adjustmentRepository,
+            StockAdjustmentLineRepository lineRepository,
+            WarehouseRepository warehouseRepository,
+            ItemRepository itemRepository,
+            StockBalanceRepository stockBalanceRepository,
+            AccountRepository accountRepository,
+            NumberSeriesService numberSeriesService,
+            PostingService postingService,
+            StockService stockService,
+            CostingService costingService,
+            @Autowired(required = false) CompanyRepository companyRepository) {
         this.adjustmentRepository = adjustmentRepository;
         this.lineRepository = lineRepository;
         this.warehouseRepository = warehouseRepository;
@@ -66,6 +88,7 @@ public class StockAdjustmentServiceImpl implements StockAdjustmentService {
         this.postingService = postingService;
         this.stockService = stockService;
         this.costingService = costingService;
+        this.companyRepository = companyRepository;
     }
 
     @Override
@@ -250,13 +273,21 @@ public class StockAdjustmentServiceImpl implements StockAdjustmentService {
 
         // Post to General Ledger if there is any financial impact
         if (!journalLines.isEmpty()) {
+            String baseCurrency = "AED";
+            if (companyRepository != null) {
+                baseCurrency = companyRepository.findById(companyId)
+                        .map(Company::getBaseCurrency)
+                        .filter(c -> c != null && !c.isBlank())
+                        .orElse("AED");
+            }
+
             SourceDocumentPostingRequest postingRequest = new SourceDocumentPostingRequest(
                     JournalSourceType.STOCK_ADJUSTMENT,
                     adj.getId(),
                     adj.getAdjustmentDate(),
                     adj.getAdjustmentNo(),
                     "Stock Adjustment - " + adj.getReason() + " (" + adj.getAdjustmentNo() + ")",
-                    "AED",
+                    baseCurrency,
                     BigDecimal.ONE,
                     journalLines
             );

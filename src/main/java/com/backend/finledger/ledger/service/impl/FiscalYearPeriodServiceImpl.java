@@ -1,6 +1,7 @@
 package com.backend.finledger.ledger.service.impl;
 
 import com.backend.finledger.common.BusinessException;
+import com.backend.finledger.common.ForbiddenException;
 import com.backend.finledger.company.entity.Company;
 import com.backend.finledger.company.repository.CompanyRepository;
 import com.backend.finledger.ledger.dto.CreateFiscalYearRequest;
@@ -126,7 +127,12 @@ public class FiscalYearPeriodServiceImpl implements FiscalYearPeriodService {
         Long companyId = CurrentUser.getCompanyId();
 
         FiscalPeriod period = fiscalPeriodRepository.findByCompanyIdAndId(companyId, periodId)
-                .orElseThrow(() -> new BusinessException("PERIOD_NOT_FOUND", "Fiscal period not found with id: " + periodId));
+                .orElseGet(() -> {
+                    if (fiscalPeriodRepository.existsById(periodId)) {
+                        throw new ForbiddenException("Cannot access fiscal period from another company");
+                    }
+                    throw new BusinessException("PERIOD_NOT_FOUND", "Fiscal period not found with id: " + periodId);
+                });
 
         period.setStatus(FiscalPeriodStatus.CLOSED);
         FiscalPeriod saved = fiscalPeriodRepository.save(period);
@@ -140,7 +146,12 @@ public class FiscalYearPeriodServiceImpl implements FiscalYearPeriodService {
         Long companyId = CurrentUser.getCompanyId();
 
         FiscalPeriod period = fiscalPeriodRepository.findByCompanyIdAndId(companyId, periodId)
-                .orElseThrow(() -> new BusinessException("PERIOD_NOT_FOUND", "Fiscal period not found with id: " + periodId));
+                .orElseGet(() -> {
+                    if (fiscalPeriodRepository.existsById(periodId)) {
+                        throw new ForbiddenException("Cannot access fiscal period from another company");
+                    }
+                    throw new BusinessException("PERIOD_NOT_FOUND", "Fiscal period not found with id: " + periodId);
+                });
 
         period.setStatus(FiscalPeriodStatus.LOCKED);
         FiscalPeriod saved = fiscalPeriodRepository.save(period);

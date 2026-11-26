@@ -18,6 +18,14 @@ public interface CrmActivityRepository extends JpaRepository<CrmActivity, Long> 
            "AND a.completedAt IS NULL AND a.dueAt IS NOT NULL AND a.dueAt < :now")
     long countOverdueActivities(@Param("companyId") Long companyId, @Param("now") Instant now);
 
+    @Query("SELECT COUNT(a) FROM CrmActivity a WHERE a.companyId = :companyId " +
+           "AND a.assignedUserId = :assignedUserId " +
+           "AND a.completedAt IS NULL AND a.dueAt IS NOT NULL AND a.dueAt < :now")
+    long countOverdueActivitiesForUser(
+            @Param("companyId") Long companyId,
+            @Param("assignedUserId") Long assignedUserId,
+            @Param("now") Instant now);
+
     Optional<CrmActivity> findByCompanyIdAndId(Long companyId, Long id);
 
     List<CrmActivity> findByCompanyIdAndRelatedTypeAndRelatedIdOrderByDueAtDesc(
