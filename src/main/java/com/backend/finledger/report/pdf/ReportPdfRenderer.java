@@ -53,7 +53,7 @@ public final class ReportPdfRenderer {
     public static byte[] renderProfitLoss(ProfitLossReportDto pl, Company company, FileStorageService storage) {
         String ccy = currency(company);
         boolean hasCompare = pl.comparePeriod() != null && !pl.comparePeriod().isBlank();
-        String subtitle = "For the period " + pl.fromDate() + " to " + pl.toDate() + " (" + ccy + ")";
+        String subtitle = "For the period " + FinLedgerPdfTheme.fmtDate(pl.fromDate()) + " to " + FinLedgerPdfTheme.fmtDate(pl.toDate()) + " (" + ccy + ")";
         return renderWithDocument(false, company, storage, "Statement of Profit or Loss", subtitle, doc -> {
             PdfPTable table = new PdfPTable(hasCompare ? 4 : 2);
             table.setWidthPercentage(100);
@@ -100,7 +100,7 @@ public final class ReportPdfRenderer {
 
     public static byte[] renderBalanceSheet(BalanceSheetReportDto bs, Company company, FileStorageService storage) {
         String ccy = currency(company);
-        String subtitle = "As of " + bs.asOfDate() + " (" + ccy + ")";
+        String subtitle = "As of " + FinLedgerPdfTheme.fmtDate(bs.asOfDate()) + " (" + ccy + ")";
         return renderWithDocument(false, company, storage, "Statement of Financial Position", subtitle, doc -> {
             PdfPTable table = new PdfPTable(2);
             table.setWidthPercentage(100);
@@ -208,8 +208,7 @@ public final class ReportPdfRenderer {
                 + "  •  Period: " + FinLedgerPdfTheme.fmtDate(gl.fromDate()) + " to " + FinLedgerPdfTheme.fmtDate(gl.toDate())
                 + "  •  Normal Balance: " + gl.normalBalance();
         return renderWithDocument(true, company, storage, "General Ledger Report", subtitle, doc -> {
-            BigDecimal netMovement = (gl.totalDebit() != null ? gl.totalDebit() : BigDecimal.ZERO)
-                    .subtract(gl.totalCredit() != null ? gl.totalCredit() : BigDecimal.ZERO);
+            BigDecimal netMovement = gl.netMovement();
             addSummaryCards(doc, new String[][]{
                     {"OPENING BALANCE", FinLedgerPdfTheme.fmtMoney(gl.openingBalance()) + " " + ccy},
                     {"NET MOVEMENT", FinLedgerPdfTheme.fmtMoney(netMovement) + " " + ccy},
@@ -373,7 +372,7 @@ public final class ReportPdfRenderer {
 
     public static byte[] renderVatReturn(VatReturnReportDto vat, Company company, FileStorageService storage) {
         String ccy = currency(company);
-        String subtitle = "Period: " + vat.fromDate() + " to " + vat.toDate() + " (" + ccy + ")";
+        String subtitle = "Period: " + FinLedgerPdfTheme.fmtDate(vat.fromDate()) + " to " + FinLedgerPdfTheme.fmtDate(vat.toDate()) + " (" + ccy + ")";
         return renderWithDocument(false, company, storage, "VAT 201 Return (FTA UAE)", subtitle, doc -> {
             PdfPTable table = new PdfPTable(4);
             table.setWidthPercentage(100);
@@ -420,7 +419,7 @@ public final class ReportPdfRenderer {
     public static byte[] renderStockValuation(StockValuationReportDto sv, Company company, FileStorageService storage) {
         String ccy = currency(company);
         String subtitle = "Warehouse: " + FinLedgerPdfTheme.safe(sv.warehouseName())
-                + "  |  As of: " + sv.asOfDate() + " (" + ccy + ")";
+                + "  |  As of: " + FinLedgerPdfTheme.fmtDate(sv.asOfDate()) + " (" + ccy + ")";
         return renderWithDocument(true, company, storage, "Inventory Stock Valuation", subtitle, doc -> {
             PdfPTable table = new PdfPTable(7);
             table.setWidthPercentage(100);
@@ -498,8 +497,10 @@ public final class ReportPdfRenderer {
                     table.addCell(bodyCell(FinLedgerPdfTheme.safe(m.movementType()), FinLedgerPdfTheme.FONT_META_BOLD, Element.ALIGN_LEFT));
                     table.addCell(bodyCell(FinLedgerPdfTheme.safe(m.reference()), FinLedgerPdfTheme.FONT_CODE_BLUE, Element.ALIGN_LEFT));
                     table.addCell(bodyCell(FinLedgerPdfTheme.safe(m.warehouseName()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_LEFT));
-                    table.addCell(bodyCell(hasPositive(m.qtyIn()) ? "+" + FinLedgerPdfTheme.fmtMoney(m.qtyIn()) : "-", FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
-                    table.addCell(bodyCell(hasPositive(m.qtyOut()) ? "-" + FinLedgerPdfTheme.fmtMoney(m.qtyOut()) : "-", FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                    BigDecimal in = m.qtyIn() != null ? m.qtyIn().abs() : BigDecimal.ZERO;
+                    BigDecimal out = m.qtyOut() != null ? m.qtyOut().abs() : BigDecimal.ZERO;
+                    table.addCell(bodyCell(in.compareTo(BigDecimal.ZERO) > 0 ? "+" + FinLedgerPdfTheme.fmtMoney(in) : "-", FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
+                    table.addCell(bodyCell(out.compareTo(BigDecimal.ZERO) > 0 ? "-" + FinLedgerPdfTheme.fmtMoney(out) : "-", FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
                     table.addCell(bodyCell(FinLedgerPdfTheme.fmtMoney(m.runningBalance()), FinLedgerPdfTheme.FONT_BODY_BOLD, Element.ALIGN_RIGHT));
                     table.addCell(bodyCell(FinLedgerPdfTheme.fmtMoneyOrDash(m.unitCost()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
                 }
@@ -515,7 +516,7 @@ public final class ReportPdfRenderer {
 
     public static byte[] renderPipelineForecast(PipelineForecastReportDto pf, Company company, FileStorageService storage) {
         String ccy = currency(company);
-        String subtitle = "Period: " + pf.fromDate() + " to " + pf.toDate() + " (" + ccy + ")";
+        String subtitle = "Period: " + FinLedgerPdfTheme.fmtDate(pf.fromDate()) + " to " + FinLedgerPdfTheme.fmtDate(pf.toDate()) + " (" + ccy + ")";
         return renderWithDocument(false, company, storage, "CRM Sales Pipeline Forecast", subtitle, doc -> {
             PdfPTable table = new PdfPTable(5);
             table.setWidthPercentage(100);
@@ -547,7 +548,7 @@ public final class ReportPdfRenderer {
     public static byte[] renderExpenseAnalysis(ExpenseAnalysisReportDto ea, Company company, FileStorageService storage) {
         String ccy = currency(company);
         String groupLabel = ea.groupBy() != null ? ea.groupBy().toUpperCase() : "CATEGORY";
-        String subtitle = "Grouped by: " + groupLabel + "  |  " + ea.fromDate() + " to " + ea.toDate() + " (" + ccy + ")";
+        String subtitle = "Grouped by: " + groupLabel + "  •  Period: " + FinLedgerPdfTheme.fmtDate(ea.fromDate()) + " to " + FinLedgerPdfTheme.fmtDate(ea.toDate()) + " (" + ccy + ")";
         return renderWithDocument(false, company, storage, "Operational Expense Analysis", subtitle, doc -> {
             PdfPTable table = new PdfPTable(5);
             table.setWidthPercentage(100);
@@ -568,7 +569,18 @@ public final class ReportPdfRenderer {
                 table.addCell(bodyCell(FinLedgerPdfTheme.fmtPct(g.percentageOfTotal()), FinLedgerPdfTheme.FONT_BODY, Element.ALIGN_RIGHT));
             }
 
-            table.addCell(grandTotalCell("GRAND TOTAL OPERATING EXPENSES", 3, Element.ALIGN_LEFT));
+            int totalClaims = 0;
+            BigDecimal totalReimbursable = BigDecimal.ZERO;
+            for (ExpenseAnalysisGroupDto g : safeList(ea.groups())) {
+                totalClaims += g.claimCount();
+                if (g.reimbursableAmount() != null) {
+                    totalReimbursable = totalReimbursable.add(g.reimbursableAmount());
+                }
+            }
+
+            table.addCell(grandTotalCell("GRAND TOTAL OPERATING EXPENSES", 1, Element.ALIGN_LEFT));
+            table.addCell(grandTotalCell(String.valueOf(totalClaims), 1, Element.ALIGN_CENTER));
+            table.addCell(grandTotalCell(FinLedgerPdfTheme.fmtMoney(totalReimbursable), 1, Element.ALIGN_RIGHT));
             table.addCell(grandTotalCell(FinLedgerPdfTheme.fmtMoney(ea.grandTotal()), 1, Element.ALIGN_RIGHT));
             table.addCell(grandTotalCell("100.0%", 1, Element.ALIGN_RIGHT));
 

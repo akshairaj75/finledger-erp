@@ -1058,12 +1058,31 @@ public class ReportServiceImpl implements ReportService {
         LocalDate fromDate = from != null ? from : LocalDate.of(LocalDate.now().getYear(), 1, 1);
         LocalDate toDate = to != null ? to : LocalDate.now();
 
+        BigDecimal openingQty = BigDecimal.ZERO;
+        List<StockMovement> priorMovements = stockMovementRepository.findMovements(
+                companyId, itemId, null, null, fromDate.minusDays(1));
+        if (priorMovements != null) {
+            for (StockMovement psm : priorMovements) {
+                boolean isIn = psm.getMovementType() == MovementType.OPENING
+                        || psm.getMovementType() == MovementType.PURCHASE
+                        || psm.getMovementType() == MovementType.SALE_RETURN
+                        || psm.getMovementType() == MovementType.ADJUSTMENT_IN
+                        || psm.getMovementType() == MovementType.TRANSFER_IN;
+                BigDecimal q = psm.getQuantity() != null ? psm.getQuantity().abs() : BigDecimal.ZERO;
+                if (isIn) {
+                    openingQty = openingQty.add(q);
+                } else {
+                    openingQty = openingQty.subtract(q);
+                }
+            }
+        }
+
         List<StockMovement> movements = stockMovementRepository.findMovements(companyId, itemId, null, fromDate, toDate);
         Map<Long, Warehouse> warehouseMap = warehouseRepository.findByCompanyId(companyId).stream()
                 .collect(Collectors.toMap(Warehouse::getId, w -> w));
 
         List<StockMovementLineDto> lineDtos = new ArrayList<>();
-        BigDecimal currentBalance = BigDecimal.ZERO;
+        BigDecimal currentBalance = openingQty;
 
         for (StockMovement sm : movements) {
             Warehouse wh = warehouseMap.get(sm.getWarehouseId());
@@ -1078,19 +1097,28 @@ public class ReportServiceImpl implements ReportService {
                     || sm.getMovementType() == MovementType.ADJUSTMENT_IN
                     || sm.getMovementType() == MovementType.TRANSFER_IN;
 
+            BigDecimal rawQty = sm.getQuantity() != null ? sm.getQuantity().abs() : BigDecimal.ZERO;
+
             if (isInward) {
-                qtyIn = sm.getQuantity();
+                qtyIn = rawQty;
                 currentBalance = currentBalance.add(qtyIn);
             } else {
-                qtyOut = sm.getQuantity();
+                qtyOut = rawQty;
                 currentBalance = currentBalance.subtract(qtyOut);
+            }
+
+            String ref = "-";
+            if (sm.getSourceType() != null && sm.getSourceId() != null) {
+                ref = sm.getSourceType().name() + " #" + sm.getSourceId();
+            } else if (sm.getSourceType() != null) {
+                ref = sm.getSourceType().name();
             }
 
             lineDtos.add(new StockMovementLineDto(
                     sm.getId(),
                     sm.getMovementDate(),
                     sm.getMovementType().name(),
-                    sm.getSourceType().name() + " #" + sm.getSourceId(),
+                    ref,
                     whName,
                     qtyIn,
                     qtyOut,
@@ -1105,7 +1133,7 @@ public class ReportServiceImpl implements ReportService {
                 item.getName(),
                 fromDate,
                 toDate,
-                BigDecimal.ZERO,
+                openingQty,
                 currentBalance,
                 lineDtos
         );

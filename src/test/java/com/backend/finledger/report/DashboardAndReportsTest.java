@@ -9,14 +9,13 @@ import com.backend.finledger.crm.repository.CrmPipelineStageRepository;
 import com.backend.finledger.crm.repository.OpportunityRepository;
 import com.backend.finledger.expense.repository.ExpenseCategoryRepository;
 import com.backend.finledger.expense.repository.ExpenseRepository;
-import com.backend.finledger.inventory.entity.Item;
+import com.backend.finledger.inventory.entity.*;
 import com.backend.finledger.inventory.repository.*;
 import com.backend.finledger.ledger.dto.GeneralLedgerReportDto;
 import com.backend.finledger.ledger.dto.TrialBalanceReportDto;
-import com.backend.finledger.ledger.entity.Account;
-import com.backend.finledger.ledger.entity.AccountType;
-import com.backend.finledger.ledger.entity.JournalSourceType;
-import com.backend.finledger.ledger.entity.NormalBalance;
+import com.backend.finledger.ledger.entity.*;
+import com.backend.finledger.report.dto.StockMovementLineDto;
+import com.backend.finledger.report.dto.StockMovementReportDto;
 import com.backend.finledger.ledger.repository.AccountRepository;
 import com.backend.finledger.ledger.repository.JournalEntryRepository;
 import com.backend.finledger.ledger.repository.JournalLineRepository;
@@ -319,6 +318,107 @@ class DashboardAndReportsTest {
         assertEquals(0, BigDecimal.valueOf(3000).compareTo(bs.retainedEarnings()));
         assertEquals(0, BigDecimal.valueOf(7000).compareTo(bs.totalEquity()));
         assertTrue(bs.balanced());
+    }
+
+    @Test
+    @DisplayName("Stock Movement Ledger: A SALE movement reduces runningBalance and populates qtyOut cleanly")
+    void testStockMovementSaleReducesRunningBalanceAndPopulatesQtyOut() {
+        Item item = new Item();
+        item.setId(10L);
+        item.setCompanyId(1L);
+        item.setSku("SKU-100");
+        item.setName("Test Product");
+        when(itemRepository.findByCompanyIdAndId(1L, 10L)).thenReturn(Optional.of(item));
+
+        Warehouse wh = new Warehouse();
+        wh.setId(1L);
+        wh.setName("Central Warehouse");
+        when(warehouseRepository.findByCompanyId(1L)).thenReturn(List.of(wh));
+
+        // Prior movements (e.g. before 2026-01-01) -> none
+        when(stockMovementRepository.findMovements(eq(1L), eq(10L), eq(null), eq(null), any(LocalDate.class)))
+                .thenReturn(Collections.emptyList());
+
+        // Opening movement: +80.00
+        StockMovement m1 = new StockMovement();
+        m1.setId(101L);
+        m1.setItemId(10L);
+        m1.setWarehouseId(1L);
+        m1.setMovementDate(LocalDate.of(2026, 1, 1));
+        m1.setMovementType(MovementType.OPENING);
+        m1.setQuantity(BigDecimal.valueOf(80));
+
+        // Outbound SALE movement: stored as negative in DB (-1.00)
+        StockMovement m2 = new StockMovement();
+        m2.setId(102L);
+        m2.setItemId(10L);
+        m2.setWarehouseId(1L);
+        m2.setMovementDate(LocalDate.of(2026, 1, 5));
+        m2.setMovementType(MovementType.SALE);
+        m2.setQuantity(BigDecimal.valueOf(-1));
+
+        when(stockMovementRepository.findMovements(eq(1L), eq(10L), eq(null), eq(LocalDate.of(2026, 1, 1)), eq(LocalDate.of(2026, 1, 31))))
+                .thenReturn(List.of(m1, m2));
+
+        StockMovementReportDto report = reportService.getStockMovementReport(
+                10L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
+
+        assertNotNull(report);
+        assertEquals(2, report.movements().size());
+
+        StockMovementLineDto openLine = report.movements().get(0);
+        assertEquals(0, BigDecimal.valueOf(80).compareTo(openLine.qtyIn()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(openLine.qtyOut()));
+        assertEquals(0, BigDecimal.valueOf(80).compareTo(openLine.runningBalance()));
+
+        StockMovementLineDto saleLine = report.movements().get(1);
+        assertEquals(0, BigDecimal.ZERO.compareTo(saleLine.qtyIn()));
+        // qtyOut is cleanly populated as positive magnitude (1.00)
+        assertEquals(0, BigDecimal.valueOf(1).compareTo(saleLine.qtyOut()));
+        // SALE movement reduces running balance from 80.00 to 79.00
+        assertEquals(0, BigDecimal.valueOf(79).compareTo(saleLine.runningBalance()));
+
+        // Closing qty matches final running balance
+        assertEquals(0, BigDecimal.valueOf(79).compareTo(report.closingQty()));
+    }
+
+    @Test
+    @DisplayName("General Ledger: A CREDIT-normal GL account's netMovement equals closingBalance - openingBalance")
+    void testGeneralLedgerCreditNormalAccountNetMovement() {
+        Account ap = new Account(1L, "2000", "Accounts Payable", AccountType.LIABILITY, "CURRENT_LIABILITY", null, false, NormalBalance.CREDIT);
+        ap.setId(201L);
+        ap.setOpeningBalance(BigDecimal.ZERO);
+
+        when(accountRepository.findByCompanyIdAndId(1L, 201L)).thenReturn(Optional.of(ap));
+        when(journalLineRepository.sumBaseDebitBeforeDate(eq(1L), eq(201L), any(LocalDate.class))).thenReturn(BigDecimal.ZERO);
+        when(journalLineRepository.sumBaseCreditBeforeDate(eq(1L), eq(201L), any(LocalDate.class))).thenReturn(BigDecimal.ZERO);
+
+        JournalEntry je = new JournalEntry();
+        je.setEntryNo("JE-2026-0001");
+        je.setEntryDate(LocalDate.of(2026, 1, 15));
+        je.setNarration("Vendor bill posted");
+
+        JournalLine jl = new JournalLine();
+        jl.setJournalEntry(je);
+        jl.setBaseDebit(BigDecimal.ZERO);
+        jl.setBaseCredit(BigDecimal.valueOf(4000));
+
+        when(journalLineRepository.findPostedLinesForAccount(eq(1L), eq(201L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(List.of(jl));
+
+        GeneralLedgerReportDto glReport = reportService.getGeneralLedgerReport(
+                201L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
+
+        assertNotNull(glReport);
+        assertEquals(0, BigDecimal.ZERO.compareTo(glReport.openingBalance()));
+        assertEquals(0, BigDecimal.valueOf(4000).compareTo(glReport.totalCredit()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(glReport.totalDebit()));
+        assertEquals(0, BigDecimal.valueOf(4000).compareTo(glReport.closingBalance()));
+
+        // netMovement for CREDIT-normal account must be +4000.00 (closingBalance - openingBalance), NOT -4000.00
+        assertEquals(0, BigDecimal.valueOf(4000).compareTo(glReport.netMovement()));
+        assertEquals(0, glReport.closingBalance().subtract(glReport.openingBalance()).compareTo(glReport.netMovement()));
+        assertEquals(0, glReport.openingBalance().add(glReport.netMovement()).compareTo(glReport.closingBalance()));
     }
 
     private JournalLineRepository.AccountBalanceSummary mockSummary(Long accId, BigDecimal dr, BigDecimal cr) {

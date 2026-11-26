@@ -19,4 +19,17 @@ public record GeneralLedgerReportDto(
     BigDecimal totalCredit,
     BigDecimal closingBalance,
     List<GeneralLedgerLineDto> lines
-) {}
+) {
+    public BigDecimal netMovement() {
+        BigDecimal debit = totalDebit != null ? totalDebit : BigDecimal.ZERO;
+        BigDecimal credit = totalCredit != null ? totalCredit : BigDecimal.ZERO;
+        if (normalBalance == NormalBalance.CREDIT) {
+            return credit.subtract(debit);
+        }
+        return debit.subtract(credit);
+    }
+
+    public BigDecimal getNetMovement() {
+        return netMovement();
+    }
+}
