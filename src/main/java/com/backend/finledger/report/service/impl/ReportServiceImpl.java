@@ -50,13 +50,7 @@ import com.backend.finledger.sales.service.ArAgeingService;
 import com.backend.finledger.security.CurrentUser;
 import com.backend.finledger.user.entity.User;
 import com.backend.finledger.user.repository.UserRepository;
-import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.FillPatternType;
-import org.apache.poi.ss.usermodel.IndexedColors;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import com.backend.finledger.report.excel.ReportExcelRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -1374,8 +1368,6 @@ public class ReportServiceImpl implements ReportService {
         );
     }
 
-    private record ReportExportData(String title, String[] headers, List<String[]> rows) {}
-
     @Override
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('REPORT_VIEW')")
@@ -1384,8 +1376,7 @@ public class ReportServiceImpl implements ReportService {
         if ("pdf".equalsIgnoreCase(format)) {
             return exportStructuredPdf(type, safeParams);
         }
-        ReportExportData data = buildReportExportData(type, safeParams);
-        return exportToExcel(data);
+        return exportStructuredExcel(type, safeParams);
     }
 
     private byte[] exportStructuredPdf(String type, Map<String, String> params) {
@@ -1450,7 +1441,7 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
-    private ReportExportData buildReportExportData(String type, Map<String, String> params) {
+    private byte[] exportStructuredExcel(String type, Map<String, String> params) {
         LocalDate from = parseLocalDateParam(params.get("from"));
         LocalDate to = parseLocalDateParam(params.get("to"));
         LocalDate asOf = parseLocalDateParam(params.get("asOf"));
@@ -1462,205 +1453,44 @@ public class ReportServiceImpl implements ReportService {
         Long ownerId = parseLongParam(params.get("ownerId"));
         String groupBy = blankToNull(params.get("groupBy"));
 
+        Company company = resolveCurrentCompany();
         String normalized = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
-        List<String[]> rows = new ArrayList<>();
 
         return switch (normalized) {
-            case "profit-loss" -> {
-                ProfitLossReportDto pnl = getProfitLossReport(from, to, compare, costCenterId);
-                for (ReportLineDto l : pnl.revenueLines()) {
-                    rows.add(new String[]{"Revenue", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                for (ReportLineDto l : pnl.cogsLines()) {
-                    rows.add(new String[]{"COGS", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                for (ReportLineDto l : pnl.expenseLines()) {
-                    rows.add(new String[]{"Expense", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                rows.add(new String[]{"SUMMARY", "-", "Gross Profit", fmtAmt(pnl.grossProfit())});
-                rows.add(new String[]{"SUMMARY", "-", "Net Profit", fmtAmt(pnl.netProfit())});
-                yield new ReportExportData("Profit & Loss Statement",
-                        new String[]{"Section", "Account Code", "Account Name", "Amount"}, rows);
-            }
-            case "balance-sheet" -> {
-                BalanceSheetReportDto bs = getBalanceSheetReport(asOf, compare);
-                for (ReportLineDto l : bs.currentAssets()) {
-                    rows.add(new String[]{"Current Asset", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                for (ReportLineDto l : bs.nonCurrentAssets()) {
-                    rows.add(new String[]{"Non-Current Asset", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                for (ReportLineDto l : bs.currentLiabilities()) {
-                    rows.add(new String[]{"Current Liability", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                for (ReportLineDto l : bs.nonCurrentLiabilities()) {
-                    rows.add(new String[]{"Non-Current Liability", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                for (ReportLineDto l : bs.equityLines()) {
-                    rows.add(new String[]{"Equity", l.accountCode(), l.accountName(), fmtAmt(l.amount())});
-                }
-                rows.add(new String[]{"Equity", "3200", "Retained Earnings", fmtAmt(bs.retainedEarnings())});
-                rows.add(new String[]{"Equity", "-", "Net Income YTD", fmtAmt(bs.netIncomeYearToDate())});
-                rows.add(new String[]{"TOTAL", "-", "Total Assets", fmtAmt(bs.totalAssets())});
-                rows.add(new String[]{"TOTAL", "-", "Total Liabilities & Equity", fmtAmt(bs.totalLiabilitiesAndEquity())});
-                yield new ReportExportData("Balance Sheet",
-                        new String[]{"Category", "Account Code", "Account Name", "Amount"}, rows);
-            }
-            case "trial-balance" -> {
-                TrialBalanceReportDto tb = getTrialBalanceReport(asOf);
-                for (TrialBalanceLineDto l : tb.lines()) {
-                    rows.add(new String[]{l.accountCode(), l.accountName(), fmtAmt(l.debitBalance()), fmtAmt(l.creditBalance())});
-                }
-                rows.add(new String[]{"TOTAL", "-", fmtAmt(tb.totalDebit()), fmtAmt(tb.totalCredit())});
-                yield new ReportExportData("Trial Balance",
-                        new String[]{"Account Code", "Account Name", "Debit", "Credit"}, rows);
-            }
+            case "profit-loss" -> ReportExcelRenderer.renderProfitLoss(
+                    getProfitLossReport(from, to, compare, costCenterId), company);
+            case "balance-sheet" -> ReportExcelRenderer.renderBalanceSheet(
+                    getBalanceSheetReport(asOf, compare), company);
+            case "trial-balance" -> ReportExcelRenderer.renderTrialBalance(
+                    getTrialBalanceReport(asOf), company);
             case "general-ledger" -> {
                 if (accountId == null) {
                     throw new BusinessException("MISSING_PARAMETER", "accountId is required to export General Ledger.");
                 }
-                GeneralLedgerReportDto gl = getGeneralLedgerReport(accountId, from, to);
-                for (GeneralLedgerLineDto l : gl.lines()) {
-                    rows.add(new String[]{
-                            String.valueOf(l.date()),
-                            nullToDash(l.entryNo()),
-                            nullToDash(l.description()),
-                            fmtAmt(l.debit()),
-                            fmtAmt(l.credit()),
-                            fmtAmt(l.runningBalance())
-                    });
-                }
-                yield new ReportExportData("General Ledger - " + gl.accountCode() + " " + gl.accountName(),
-                        new String[]{"Date", "Entry No", "Description", "Debit", "Credit", "Balance"}, rows);
+                yield ReportExcelRenderer.renderGeneralLedger(
+                        getGeneralLedgerReport(accountId, from, to), company);
             }
-            case "ar-ageing" -> {
-                ArAgeingReportDto ar = arAgeingService.getArAgeingReport(asOf);
-                for (var c : ar.customers()) {
-                    rows.add(new String[]{
-                            nullToDash(c.customerCode()), nullToDash(c.customerName()),
-                            fmtAmt(c.current()), fmtAmt(c.days1To30()), fmtAmt(c.days31To60()),
-                            fmtAmt(c.days61To90()), fmtAmt(c.daysOver90()), fmtAmt(c.totalOutstanding())
-                    });
-                }
-                yield new ReportExportData("AR Ageing Report",
-                        new String[]{"Code", "Customer", "Current", "1-30", "31-60", "61-90", "90+", "Total"}, rows);
-            }
-            case "ap-ageing" -> {
-                ApAgeingReportDto ap = apAgeingService.getApAgeingReport(asOf);
-                for (var v : ap.vendors()) {
-                    rows.add(new String[]{
-                            nullToDash(v.vendorCode()), nullToDash(v.vendorName()),
-                            fmtAmt(v.current()), fmtAmt(v.days1To30()), fmtAmt(v.days31To60()),
-                            fmtAmt(v.days61To90()), fmtAmt(v.daysOver90()), fmtAmt(v.totalOutstanding())
-                    });
-                }
-                yield new ReportExportData("AP Ageing Report",
-                        new String[]{"Code", "Vendor", "Current", "1-30", "31-60", "61-90", "90+", "Total"}, rows);
-            }
-            case "vat-return" -> {
-                VatReturnReportDto vat = getVatReturnReport(from, to);
-                rows.add(new String[]{"1a", "Standard Rated Sales", fmtAmt(vat.standardRatedSalesAmount()), fmtAmt(vat.standardRatedSalesVat())});
-                rows.add(new String[]{"2", "Zero-Rated Sales", fmtAmt(vat.zeroRatedSalesAmount()), "0.00"});
-                rows.add(new String[]{"3", "Exempt Sales", fmtAmt(vat.exemptSalesAmount()), "0.00"});
-                rows.add(new String[]{"9", "Standard Rated Purchases", fmtAmt(vat.standardRatedPurchasesAmount()), fmtAmt(vat.standardRatedPurchasesVat())});
-                rows.add(new String[]{"13", "Net VAT Due (Output - Input)", "-", fmtAmt(vat.netVatDue())});
-                yield new ReportExportData("UAE VAT Return Summary",
-                        new String[]{"Box", "Description", "Taxable Amount", "VAT Amount"}, rows);
-            }
-            case "stock-valuation" -> {
-                StockValuationReportDto sv = getStockValuationReport(asOf, warehouseId);
-                for (StockValuationLineDto l : sv.lines()) {
-                    rows.add(new String[]{
-                            nullToDash(l.sku()), nullToDash(l.itemName()), nullToDash(l.warehouseName()),
-                            fmtAmt(l.quantityOnHand()), fmtAmt(l.unitCost()), fmtAmt(l.totalValue())
-                    });
-                }
-                yield new ReportExportData("Stock Valuation Report",
-                        new String[]{"SKU", "Item Name", "Warehouse", "Qty On Hand", "Unit Cost", "Total Value"}, rows);
-            }
+            case "ar-ageing" -> ReportExcelRenderer.renderArAgeing(
+                    arAgeingService.getArAgeingReport(asOf), company);
+            case "ap-ageing" -> ReportExcelRenderer.renderApAgeing(
+                    apAgeingService.getApAgeingReport(asOf), company);
+            case "vat-return" -> ReportExcelRenderer.renderVatReturn(
+                    getVatReturnReport(from, to), company);
+            case "stock-valuation" -> ReportExcelRenderer.renderStockValuation(
+                    getStockValuationReport(asOf, warehouseId), company);
             case "stock-movement" -> {
                 if (itemId == null) {
                     throw new BusinessException("MISSING_PARAMETER", "itemId is required to export Stock Movement.");
                 }
-                StockMovementReportDto sm = getStockMovementReport(itemId, from, to);
-                for (StockMovementLineDto l : sm.movements()) {
-                    rows.add(new String[]{
-                            String.valueOf(l.date()), nullToDash(l.movementType()), nullToDash(l.warehouseName()),
-                            fmtAmt(l.qtyIn()), fmtAmt(l.qtyOut()), fmtAmt(l.runningBalance())
-                    });
-                }
-                yield new ReportExportData("Stock Movement - " + sm.sku() + " " + sm.itemName(),
-                        new String[]{"Date", "Type", "Warehouse", "In", "Out", "Balance"}, rows);
+                yield ReportExcelRenderer.renderStockMovement(
+                        getStockMovementReport(itemId, from, to), company);
             }
-            case "pipeline-forecast" -> {
-                PipelineForecastReportDto pf = getPipelineForecastReport(from, to, ownerId);
-                for (PipelineStageSummaryDto s : pf.stages()) {
-                    rows.add(new String[]{
-                            nullToDash(s.stageName()), String.valueOf(s.dealCount()),
-                            (s.probability() != null ? s.probability() + "%" : "-"),
-                            fmtAmt(s.totalValue()), fmtAmt(s.weightedValue())
-                    });
-                }
-                yield new ReportExportData("CRM Pipeline Forecast",
-                        new String[]{"Stage", "Deals", "Probability", "Total Value", "Weighted Value"}, rows);
-            }
-            case "expense-analysis" -> {
-                ExpenseAnalysisReportDto ea = getExpenseAnalysisReport(from, to, groupBy);
-                for (ExpenseAnalysisGroupDto g : ea.groups()) {
-                    rows.add(new String[]{
-                            nullToDash(g.groupName()), String.valueOf(g.claimCount()),
-                            fmtAmt(g.totalAmount()), fmtAmt(g.reimbursableAmount()),
-                            g.percentageOfTotal() != null ? String.format(Locale.ROOT, "%.2f%%", g.percentageOfTotal()) : "0.00%"
-                    });
-                }
-                yield new ReportExportData("Expense Analysis Report",
-                        new String[]{"Group", "Claims", "Total Amount", "Reimbursable", "Share %"}, rows);
-            }
+            case "pipeline-forecast" -> ReportExcelRenderer.renderPipelineForecast(
+                    getPipelineForecastReport(from, to, ownerId), company);
+            case "expense-analysis" -> ReportExcelRenderer.renderExpenseAnalysis(
+                    getExpenseAnalysisReport(from, to, groupBy), company);
             default -> throw new BusinessException("UNSUPPORTED_REPORT_TYPE", "Unsupported report export type: " + type);
         };
-    }
-
-    private byte[] exportToExcel(ReportExportData data) {
-        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("Report");
-
-            org.apache.poi.ss.usermodel.Font boldFont = workbook.createFont();
-            boldFont.setBold(true);
-
-            CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFont(boldFont);
-            headerStyle.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
-            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-
-            Row titleRow = sheet.createRow(0);
-            org.apache.poi.ss.usermodel.Cell titleCell = titleRow.createCell(0);
-            titleCell.setCellValue("FinLedger - " + data.title());
-            titleCell.setCellStyle(headerStyle);
-
-            Row headerRow = sheet.createRow(2);
-            for (int i = 0; i < data.headers().length; i++) {
-                org.apache.poi.ss.usermodel.Cell cell = headerRow.createCell(i);
-                cell.setCellValue(data.headers()[i]);
-                cell.setCellStyle(headerStyle);
-            }
-
-            int rowIdx = 3;
-            for (String[] rowValues : data.rows()) {
-                Row r = sheet.createRow(rowIdx++);
-                for (int i = 0; i < rowValues.length; i++) {
-                    r.createCell(i).setCellValue(rowValues[i] != null ? rowValues[i] : "-");
-                }
-            }
-
-            for (int i = 0; i < data.headers().length; i++) {
-                sheet.autoSizeColumn(i);
-            }
-
-            workbook.write(out);
-            return out.toByteArray();
-        } catch (Exception e) {
-            throw new BusinessException("EXPORT_ERROR", "Failed to generate Excel report: " + e.getMessage());
-        }
     }
 
     private LocalDate parseLocalDateParam(String raw) {

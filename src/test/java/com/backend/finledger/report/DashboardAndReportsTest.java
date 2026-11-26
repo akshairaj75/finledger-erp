@@ -30,6 +30,11 @@ import com.backend.finledger.sales.dto.ArAgeingReportDto;
 import com.backend.finledger.sales.repository.InvoiceRepository;
 import com.backend.finledger.sales.service.ArAgeingService;
 import com.backend.finledger.security.CurrentUser;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +49,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collections;
@@ -174,7 +180,7 @@ class DashboardAndReportsTest {
 
     @Test
     @DisplayName("Should generate Profit and Loss report correctly")
-    void testGetProfitLossReport() {
+    void testGetProfitLossReport() throws Exception {
         Account revAcc = new Account();
         revAcc.setId(401L);
         revAcc.setCode("4000");
@@ -225,11 +231,47 @@ class DashboardAndReportsTest {
         assertEquals(BigDecimal.valueOf(60000), pnl.grossProfit());
         assertEquals(BigDecimal.valueOf(25000), pnl.totalExpenses());
         assertEquals(BigDecimal.valueOf(35000), pnl.netProfit());
+
+        byte[] pnlXlsx = reportService.exportReport("profit-loss", "xlsx",
+                Map.of("from", "2026-01-01", "to", "2026-12-31"));
+        assertNotNull(pnlXlsx);
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(pnlXlsx))) {
+            Sheet sheet = wb.getSheet("Profit & Loss");
+            assertNotNull(sheet, "Sheet tab name should be 'Profit & Loss'");
+            assertNotNull(sheet.getPaneInformation(), "Freeze pane should be configured");
+            assertTrue(sheet.getPaneInformation().isFreezePane());
+
+            boolean foundGrossProfitFormula = false;
+            boolean foundNetProfitFormula = false;
+            boolean foundNumericRevenue = false;
+
+            for (Row row : sheet) {
+                Cell nameCell = row.getCell(1);
+                Cell amountCell = row.getCell(2);
+                if (nameCell != null && nameCell.getCellType() == CellType.STRING) {
+                    String label = nameCell.getStringCellValue().trim();
+                    if (label.contains("Service Revenue") && amountCell != null) {
+                        assertEquals(CellType.NUMERIC, amountCell.getCellType(), "Account amount must be NUMERIC");
+                        assertEquals(100000.0, amountCell.getNumericCellValue(), 0.001);
+                        foundNumericRevenue = true;
+                    } else if (label.equalsIgnoreCase("Gross Profit") && amountCell != null) {
+                        assertEquals(CellType.FORMULA, amountCell.getCellType(), "Gross Profit must use FORMULA");
+                        foundGrossProfitFormula = true;
+                    } else if (label.equalsIgnoreCase("NET PROFIT / (LOSS)") && amountCell != null) {
+                        assertEquals(CellType.FORMULA, amountCell.getCellType(), "Net Profit must use FORMULA");
+                        foundNetProfitFormula = true;
+                    }
+                }
+            }
+            assertTrue(foundNumericRevenue, "Account line amount must be numeric");
+            assertTrue(foundGrossProfitFormula, "Gross Profit should use live formula");
+            assertTrue(foundNetProfitFormula, "Net Profit should use live formula");
+        }
     }
 
     @Test
     @DisplayName("Should export Balance Sheet Excel and Profit & Loss PDF with forwarded date filters")
-    void testReportExportAllTypesWithParams() {
+    void testReportExportAllTypesWithParams() throws Exception {
         Account cashAcc = new Account();
         cashAcc.setId(101L);
         cashAcc.setCode("1110");
@@ -252,6 +294,16 @@ class DashboardAndReportsTest {
         assertEquals('P', (char) xlsxBytes[0]);
         assertEquals('K', (char) xlsxBytes[1]);
 
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(xlsxBytes))) {
+            Sheet sheet = wb.getSheet("Balance Sheet");
+            assertNotNull(sheet, "Sheet tab name should be 'Balance Sheet'");
+            assertEquals("FinLedger ERP", sheet.getRow(0).getCell(0).getStringCellValue());
+            assertEquals("Statement of Financial Position (Balance Sheet)", sheet.getRow(1).getCell(0).getStringCellValue());
+            assertTrue(sheet.getRow(2).getCell(0).getStringCellValue().contains("As of 31-Oct-2026"));
+            assertNotNull(sheet.getPaneInformation(), "Freeze pane should be configured");
+            assertTrue(sheet.getPaneInformation().isFreezePane());
+        }
+
         byte[] pdfBytes = reportService.exportReport("profit-loss", "pdf",
                 Map.of("from", "2026-01-01", "to", "2026-10-31"));
         assertNotNull(pdfBytes);
@@ -267,7 +319,7 @@ class DashboardAndReportsTest {
 
     @Test
     @DisplayName("Should classify Balance Sheet current accounts properly without duplicating Retained Earnings")
-    void testGetBalanceSheetClassificationAndRetainedEarnings() {
+    void testGetBalanceSheetClassificationAndRetainedEarnings() throws Exception {
         Account ar = new Account(1L, "1200", "Accounts Receivable", AccountType.ASSET, "CURRENT_ASSET", null, false, NormalBalance.DEBIT);
         ar.setId(12L);
         Account inv = new Account(1L, "1300", "Inventory", AccountType.ASSET, "STOCK", null, false, NormalBalance.DEBIT);
@@ -318,6 +370,47 @@ class DashboardAndReportsTest {
         assertEquals(0, BigDecimal.valueOf(3000).compareTo(bs.retainedEarnings()));
         assertEquals(0, BigDecimal.valueOf(7000).compareTo(bs.totalEquity()));
         assertTrue(bs.balanced());
+
+        // Excel export assertions
+        byte[] bsXlsx = reportService.exportReport("balance-sheet", "xlsx", Map.of("asOf", "2026-10-31"));
+        assertNotNull(bsXlsx);
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bsXlsx))) {
+            Sheet sheet = wb.getSheet("Balance Sheet");
+            assertNotNull(sheet, "Sheet tab name should be 'Balance Sheet'");
+            assertNotNull(sheet.getPaneInformation(), "Freeze pane should be configured");
+            assertTrue(sheet.getPaneInformation().isFreezePane());
+
+            int retainedEarningsCount = 0;
+            Double retainedEarningsVal = null;
+            boolean hasFormulaCell = false;
+
+            for (Row row : sheet) {
+                for (int c = 0; c < 2; c++) {
+                    Cell labelCell = row.getCell(c);
+                    if (labelCell != null && labelCell.getCellType() == CellType.STRING) {
+                        String text = labelCell.getStringCellValue();
+                        if ("Retained Earnings".equalsIgnoreCase(text.trim())) {
+                            retainedEarningsCount++;
+                            Cell amountCell = row.getCell(2);
+                            if (amountCell != null) {
+                                assertEquals(CellType.NUMERIC, amountCell.getCellType(), "Retained earnings amount must be numeric");
+                                retainedEarningsVal = amountCell.getNumericCellValue();
+                            }
+                        }
+                    }
+                }
+                for (Cell cell : row) {
+                    if (cell.getCellType() == CellType.FORMULA) {
+                        hasFormulaCell = true;
+                    }
+                }
+            }
+
+            assertEquals(1, retainedEarningsCount, "Retained Earnings should appear exactly once in the Excel sheet");
+            assertNotNull(retainedEarningsVal);
+            assertEquals(3000.0, retainedEarningsVal, 0.001);
+            assertTrue(hasFormulaCell, "Sheet must contain live Excel formulas for totals/subtotals");
+        }
     }
 
     @Test
